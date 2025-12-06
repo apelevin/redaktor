@@ -38,6 +38,7 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [processedItems, setProcessedItems] = useState<Set<string>>(new Set());
   const [processingItemKey, setProcessingItemKey] = useState<string | null>(null);
+  const [allItemsProcessed, setAllItemsProcessed] = useState(false);
 
   const addMessage = (type: ChatMessage['type'], content: string | Question) => {
     setMessages((prev) => [
@@ -51,9 +52,25 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
     ]);
   };
 
+  // Проверка завершения обработки всех пунктов
+  useEffect(() => {
+    if (selectedItems.length === 0) return;
+    
+    // Проверяем, все ли выбранные пункты обработаны
+    const allSelectedKeys = selectedItems.map(item => `${item.sectionId}-${item.itemIndex}`);
+    const allProcessed = allSelectedKeys.every(key => processedItems.has(key));
+    
+    if (allProcessed && !allItemsProcessed && !isLoading && !currentQuestion) {
+      console.log('All items processed, enabling button');
+      setAllItemsProcessed(true);
+      setCurrentSkeletonItem(null);
+      setProcessingItemKey(null);
+    }
+  }, [processedItems.size, selectedItems.length, allItemsProcessed, isLoading, currentQuestion]);
+
   // Обработка следующего пункта
   useEffect(() => {
-    if (selectedItems.length > 0 && currentItemIndex < selectedItems.length && !isLoading && !currentQuestion) {
+    if (selectedItems.length > 0 && currentItemIndex < selectedItems.length && !isLoading && !currentQuestion && !allItemsProcessed) {
       const item = selectedItems[currentItemIndex];
       const itemKey = `${item.sectionId}-${item.itemIndex}`;
       // Проверяем, что пункт еще не обработан
@@ -61,14 +78,14 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
         processNextItem();
       }
     }
-  }, [currentItemIndex, selectedItems.length, isLoading, currentQuestion]);
+  }, [currentItemIndex, selectedItems.length, isLoading, currentQuestion, allItemsProcessed]);
 
   const processNextItem = async () => {
     if (currentItemIndex >= selectedItems.length) {
       // Все пункты обработаны
       setCurrentSkeletonItem(null);
       setProcessingItemKey(null);
-      onAllItemsProcessed();
+      setAllItemsProcessed(true);
       return;
     }
 
@@ -82,7 +99,7 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
       } else {
         setCurrentSkeletonItem(null);
         setProcessingItemKey(null);
-        onAllItemsProcessed();
+        setAllItemsProcessed(true);
       }
       return;
     }
@@ -181,7 +198,7 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
           }, 50);
         } else {
           // Все пункты обработаны
-          onAllItemsProcessed();
+          setAllItemsProcessed(true);
         }
       }
     } catch (error) {
@@ -198,7 +215,7 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
           setCurrentItemIndex(nextIndex);
         }, 50);
       } else {
-        onAllItemsProcessed();
+        setAllItemsProcessed(true);
       }
     }
   };
@@ -246,8 +263,17 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
     setCurrentQuestionState(null);
     setCurrentSkeletonItem(null);
     
-    // Переходим к следующему пункту (useEffect вызовет processNextItem)
-    setCurrentItemIndex(currentItemIndex + 1);
+    // Проверяем, все ли пункты обработаны (включая текущий)
+    const nextIndex = currentItemIndex + 1;
+    if (nextIndex >= selectedItems.length) {
+      // Это был последний пункт
+      console.log('Last item processed, enabling button');
+      setAllItemsProcessed(true);
+      setProcessingItemKey(null);
+    } else {
+      // Переходим к следующему пункту (useEffect вызовет processNextItem)
+      setCurrentItemIndex(nextIndex);
+    }
   };
 
   // Получаем информацию о текущем пункте для отображения
@@ -336,6 +362,30 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
           />
         </div>
       )}
+
+      <div className="p-4 border-t border-gray-200 bg-white">
+        {allItemsProcessed && !currentQuestion && !isLoading && (
+          <div className="mb-4">
+            <p className="text-green-800 font-medium mb-2">
+              ✓ Все вопросы по структуре документа отвечены
+            </p>
+            <p className="text-sm text-green-700 mb-4">
+              Теперь вы можете перейти к генерации полного текста документа
+            </p>
+          </div>
+        )}
+        <button
+          onClick={() => onAllItemsProcessed()}
+          disabled={!allItemsProcessed || isLoading || !!currentQuestion}
+          className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
+            allItemsProcessed && !isLoading && !currentQuestion
+              ? 'bg-green-600 text-white hover:bg-green-700'
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          Перейти к генерации текста документа
+        </button>
+      </div>
     </div>
   );
 }

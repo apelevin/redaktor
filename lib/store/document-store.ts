@@ -14,7 +14,7 @@ export interface CostRecord {
   operation: string; // 'question_generation' | 'completion_message' | 'skeleton' | 'clause' | 'context_completion'
 }
 
-export type PipelineStep = 'step1' | 'step2' | 'step3';
+export type PipelineStep = 'step1' | 'step2' | 'step3' | 'step4';
 
 interface DocumentStore {
   documentType: string | null;
@@ -31,6 +31,8 @@ interface DocumentStore {
   skeletonConfirmed: boolean; // Флаг подтверждения структуры
   currentSkeletonItem: { sectionId: string; itemIndex: number } | null; // Текущий пункт, по которому задается вопрос
   skeletonItemAnswers: Record<string, any>; // Ответы по пунктам скелета (ключ: sectionId-itemIndex)
+  generatedDocument: string | null; // Полный сгенерированный текст документа
+  documentClauses: Record<string, string>; // Сгенерированные тексты по пунктам (ключ: sectionId-itemIndex)
   costRecords: CostRecord[];
 
   // Actions
@@ -50,6 +52,8 @@ interface DocumentStore {
   confirmSkeleton: () => void;
   setCurrentSkeletonItem: (item: { sectionId: string; itemIndex: number } | null) => void;
   addSkeletonItemAnswer: (sectionId: string, itemIndex: number, answer: any) => void;
+  setGeneratedDocument: (text: string | null) => void;
+  addDocumentClause: (sectionId: string, itemIndex: number, text: string) => void;
   addCostRecord: (model: string, usage: TokenUsage, operation: string) => void;
   reset: () => void;
   
@@ -70,6 +74,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   skeletonConfirmed: false,
   currentSkeletonItem: null,
   skeletonItemAnswers: {},
+  generatedDocument: null,
+  documentClauses: {},
   costRecords: [],
 
   setDocumentType: (type) => set({ 
@@ -87,6 +93,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     skeletonConfirmed: false,
     currentSkeletonItem: null,
     skeletonItemAnswers: {},
+    generatedDocument: null,
+    documentClauses: {},
     costRecords: [], // Сбрасываем затраты при новом документе
   }),
 
@@ -186,6 +194,15 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     }));
   },
 
+  setGeneratedDocument: (text) => set({ generatedDocument: text }),
+
+  addDocumentClause: (sectionId, itemIndex, text) => {
+    const key = `${sectionId}-${itemIndex}`;
+    set((state) => ({
+      documentClauses: { ...state.documentClauses, [key]: text },
+    }));
+  },
+
   addCostRecord: (model, usage, operation) => {
     const cost = calculateCost(model, usage).totalCost;
     const record: CostRecord = {
@@ -216,6 +233,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     skeletonConfirmed: false,
     currentSkeletonItem: null,
     skeletonItemAnswers: {},
+    generatedDocument: null,
+    documentClauses: {},
     costRecords: [],
   }),
 }));

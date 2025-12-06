@@ -115,8 +115,8 @@ export default function Step3Panel() {
   }, [skeleton, selectedSkeletonItems]);
 
   const handleAllItemsProcessed = () => {
-    // Все пункты обработаны, можно переходить к следующему шагу
-    // TODO: Переход к следующему шагу (генерация текста документа)
+    // Все пункты обработаны, переходим к генерации текста документа
+    setCurrentStep('step4');
   };
 
   // Если структура подтверждена, показываем двухпанельный layout

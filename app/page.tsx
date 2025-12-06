@@ -5,6 +5,7 @@ import DocumentPanel from './components/DocumentPanel';
 import ChatPanel from './components/ChatPanel';
 import Step2Panel from './components/Step2Panel';
 import Step3Panel from './components/Step3Panel';
+import Step4Panel from './components/Step4Panel';
 
 export default function Home() {
   const currentStep = useDocumentStore((state) => state.currentStep);
@@ -15,6 +16,10 @@ export default function Home() {
 
   if (currentStep === 'step3') {
     return <Step3Panel />;
+  }
+
+  if (currentStep === 'step4') {
+    return <Step4Panel />;
   }
 
   return (
