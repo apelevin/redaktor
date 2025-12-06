@@ -11,6 +11,7 @@ export interface ModelPricing {
 
 /**
  * Таблица цен для моделей (Standard tier)
+ * Обновлено согласно concept/price.md
  */
 const PRICING: Record<string, ModelPricing> = {
   'gpt-5.1': {
@@ -48,6 +49,20 @@ const PRICING: Record<string, ModelPricing> = {
     cached: 0.125,
     output: 10.00,
   },
+  'gpt-5.1-chat-latest': {
+    input: 1.25,
+    cached: 0.125,
+    output: 10.00,
+  },
+  'gpt-5-chat-latest': {
+    input: 1.25,
+    cached: 0.125,
+    output: 10.00,
+  },
+  'gpt-5-pro': {
+    input: 15.00,
+    output: 120.00,
+  },
   'gpt-4.1': {
     input: 2.00,
     cached: 0.50,
@@ -68,10 +83,67 @@ const PRICING: Record<string, ModelPricing> = {
     cached: 1.25,
     output: 10.00,
   },
+  'gpt-4o-2024-05-13': {
+    input: 5.00,
+    output: 15.00,
+  },
   'gpt-4o-mini': {
     input: 0.15,
     cached: 0.075,
     output: 0.60,
+  },
+  'gpt-realtime': {
+    input: 4.00,
+    cached: 0.40,
+    output: 16.00,
+  },
+  'gpt-realtime-mini': {
+    input: 0.60,
+    cached: 0.06,
+    output: 2.40,
+  },
+  'o1': {
+    input: 15.00,
+    cached: 7.50,
+    output: 60.00,
+  },
+  'o1-pro': {
+    input: 150.00,
+    output: 600.00,
+  },
+  'o3-pro': {
+    input: 20.00,
+    output: 80.00,
+  },
+  'o3': {
+    input: 2.00,
+    cached: 0.50,
+    output: 8.00,
+  },
+  'o3-deep-research': {
+    input: 10.00,
+    cached: 2.50,
+    output: 40.00,
+  },
+  'o4-mini': {
+    input: 1.10,
+    cached: 0.275,
+    output: 4.40,
+  },
+  'o4-mini-deep-research': {
+    input: 2.00,
+    cached: 0.50,
+    output: 8.00,
+  },
+  'o3-mini': {
+    input: 1.10,
+    cached: 0.55,
+    output: 4.40,
+  },
+  'o1-mini': {
+    input: 1.10,
+    cached: 0.55,
+    output: 4.40,
   },
 };
 

@@ -4,7 +4,13 @@ import { useState, useEffect } from 'react';
 import { useDocumentStore } from '@/lib/store/document-store';
 import type { Question, QuestionAnswer } from '@/types/question';
 import QuestionRenderer from './questions/QuestionRenderer';
+import CompletionChoice from './CompletionChoice';
 import { mergeAnswerToContext } from '@/lib/utils/context-merge';
+import { calcCompletionState, decideNextStep, isQuestionAnswered } from '@/lib/utils/question-completion';
+import type { CompletionMessage } from '@/types/completion';
+import { useCanGenerateContract } from '@/lib/store/document-store';
+import CostDisplay from './CostDisplay';
+import type { TokenUsage } from '@/lib/utils/cost-calculator';
 
 interface ChatMessage {
   id: string;
@@ -18,17 +24,27 @@ export default function ChatPanel() {
     documentType,
     context,
     answers,
+    questions,
     currentQuestionId,
+    completionState,
+    nextStep,
     setDocumentType,
     addAnswer,
     setCurrentQuestion,
+    addQuestion,
     updateContext,
+    setCompletionState,
+    setNextStep,
+    addCostRecord,
   } = useDocumentStore();
+
+  const canGenerateContract = useCanGenerateContract();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentQuestion, setCurrentQuestionState] = useState<Question | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [newDocumentType, setNewDocumentType] = useState('');
+  const [completionMessage, setCompletionMessage] = useState<CompletionMessage | null>(null);
 
   const addMessage = (type: ChatMessage['type'], content: string | Question) => {
     setMessages((prev) => [
@@ -65,10 +81,29 @@ export default function ChatPanel() {
 
       const data = await response.json();
 
+      // Отслеживаем затраты
+      if (data.usage && data.model) {
+        addCostRecord(data.model, data.usage as TokenUsage, 'question_generation');
+      }
+
       if (data.question) {
-        setCurrentQuestionState(data.question);
-        setCurrentQuestion(data.question.id);
-        addMessage('question', data.question);
+        const question = data.question as Question;
+        // Проверяем, не был ли этот вопрос уже задан
+        const questionAlreadyExists = questions.find(q => q.id === question.id);
+        if (!questionAlreadyExists) {
+          addQuestion(question);
+        }
+        setCurrentQuestionState(question);
+        setCurrentQuestion(question.id);
+        addMessage('question', question);
+        
+        // Инициализируем состояние заполненности
+        const allQuestionsForState = questionAlreadyExists ? questions : [...questions, question];
+        const initialContext = {};
+        const initialCompletionState = calcCompletionState(allQuestionsForState, initialContext);
+        setCompletionState(initialCompletionState);
+        const initialStep = decideNextStep(initialCompletionState, allQuestionsForState, initialContext);
+        setNextStep(initialStep);
       } else {
         addMessage('system', 'Контекст достаточен для генерации документа');
       }
@@ -117,9 +152,20 @@ export default function ChatPanel() {
     const newContext = mergeAnswerToContext(context, answer, currentQuestion);
     updateContext(newContext);
 
-    // Запрашиваем следующий вопрос
+    // Пересчитываем состояние заполненности
+    // Убеждаемся, что currentQuestion не дублируется в списке
+    const allQuestions = currentQuestion && !questions.find(q => q.id === currentQuestion.id)
+      ? [...questions, currentQuestion].filter(Boolean) as Question[]
+      : questions.filter(Boolean) as Question[];
+    const newCompletionState = calcCompletionState(allQuestions, newContext);
+    setCompletionState(newCompletionState);
+
+    // Всегда сначала пытаемся запросить следующий вопрос через API
+    // Это гарантирует, что мы получим все вопросы, которые нужно задать
     try {
-      const answeredQuestionIds = [...answers.map(a => a.questionId), currentQuestion.id];
+      const answeredQuestionIds = allQuestions
+        .filter(q => isQuestionAnswered(q, newContext))
+        .map(q => q.id);
 
       const response = await fetch('/api/questions/next', {
         method: 'POST',
@@ -133,27 +179,129 @@ export default function ChatPanel() {
 
       const data = await response.json();
 
+      // Отслеживаем затраты
+      if (data.usage && data.model) {
+        addCostRecord(data.model, data.usage as TokenUsage, 'question_generation');
+      }
+
       if (data.question) {
-        setCurrentQuestionState(data.question);
-        setCurrentQuestion(data.question.id);
-        addMessage('question', data.question);
-      } else {
-        setCurrentQuestionState(null);
-        setCurrentQuestion(null);
-        addMessage('system', 'Все вопросы заданы. Контекст достаточен для генерации документа.');
+        // Получили новый вопрос от API - показываем его
+        const question = data.question as Question;
+        
+        // Проверяем, не был ли этот вопрос уже отвечен
+        const isAlreadyAnswered = isQuestionAnswered(question, newContext);
+        if (isAlreadyAnswered) {
+          // Если вопрос уже отвечен, не показываем его снова
+          // Но продолжаем запрашивать следующий вопрос
+          setIsLoading(false);
+          return;
+        }
+        
+        // Проверяем, не был ли этот вопрос уже задан
+        const questionAlreadyExists = allQuestions.find(q => q.id === question.id);
+        if (!questionAlreadyExists) {
+          addQuestion(question);
+        }
+        
+        // Проверяем, не был ли этот вопрос уже добавлен в сообщения
+        const questionAlreadyInMessages = messages.some(
+          msg => msg.type === 'question' && typeof msg.content !== 'string' && msg.content.id === question.id
+        );
+        
+        if (!questionAlreadyInMessages) {
+          setCurrentQuestionState(question);
+          setCurrentQuestion(question.id);
+          addMessage('question', question);
+        } else {
+          // Вопрос уже был задан, просто устанавливаем его как текущий
+          setCurrentQuestionState(question);
+          setCurrentQuestion(question.id);
+        }
+        
+        setIsLoading(false);
+        return;
       }
     } catch (error) {
       console.error('Error getting next question:', error);
-      addMessage('system', 'Ошибка при получении следующего вопроса');
-    } finally {
-      setIsLoading(false);
+    }
+
+    // Если API вернул null (нет больше вопросов), проверяем recommended вопросы
+    // Пересчитываем состояние заполненности с учетом всех вопросов
+    const finalAllQuestions = questions.filter(Boolean) as Question[];
+    const finalCompletionState = calcCompletionState(finalAllQuestions, newContext);
+    setCompletionState(finalCompletionState);
+
+    // Определяем следующий шаг для recommended вопросов
+    const step = decideNextStep(finalCompletionState, finalAllQuestions, newContext);
+    setNextStep(step);
+
+    // Если must завершены и есть recommended, генерируем мета-сообщение
+    if (finalCompletionState.mustCompleted && step.kind === 'askMore' && step.questions.length > 0) {
+      try {
+        const remainingRecommended = step.questions;
+        
+        const response = await fetch('/api/completion-message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            state: finalCompletionState,
+            remainingRecommended,
+          }),
+        });
+
+        const result = await response.json();
+        
+        // Отслеживаем затраты
+        if (result.usage && result.model) {
+          addCostRecord(result.model, result.usage as TokenUsage, 'completion_message');
+        }
+        
+        setCompletionMessage(result.message);
+        addMessage('system', result.message.message);
+        setCurrentQuestionState(null);
+        setCurrentQuestion(null);
+      } catch (error) {
+        console.error('Error generating completion message:', error);
+      }
+    } else if (step.kind === 'generateContract') {
+      // Все вопросы заданы (и API вернул null, и нет recommended)
+      setCompletionMessage(null);
+      addMessage('system', 'Все вопросы заданы. Контекст достаточен для генерации документа.');
+      setCurrentQuestionState(null);
+      setCurrentQuestion(null);
+    } else {
+      // Неожиданная ситуация
+      setCurrentQuestionState(null);
+      setCurrentQuestion(null);
+    }
+
+    setIsLoading(false);
+  };
+
+  const handleGenerateContract = () => {
+    addMessage('system', 'Начинаем генерацию договора...');
+    // TODO: Здесь будет логика генерации договора
+  };
+
+  const handleContinueQuestions = (questionsToAsk: Question[]) => {
+    setCompletionMessage(null);
+    if (questionsToAsk.length > 0) {
+      const nextQ = questionsToAsk[0];
+      setCurrentQuestionState(nextQ);
+      setCurrentQuestion(nextQ.id);
+      addMessage('question', nextQ);
     }
   };
 
   return (
     <div className="h-full flex flex-col bg-gray-50">
       <div className="p-4 border-b border-gray-200 bg-white">
-        <h2 className="text-2xl font-bold mb-4">Чат</h2>
+        <div className="flex items-start justify-between mb-4">
+          <h2 className="text-2xl font-bold">Чат</h2>
+          <div className="w-48">
+            <CostDisplay />
+          </div>
+        </div>
         
         {!documentType ? (
           <div className="space-y-2">
@@ -222,6 +370,17 @@ export default function ChatPanel() {
           </div>
         )}
       </div>
+
+      {completionMessage && nextStep?.kind === 'askMore' && nextStep.questions.length > 0 && (
+        <div className="p-4 border-t border-gray-200 bg-white">
+          <CompletionChoice
+            message={completionMessage}
+            onGenerate={handleGenerateContract}
+            onContinue={handleContinueQuestions}
+            questions={nextStep.questions}
+          />
+        </div>
+      )}
 
       {currentQuestion && (
         <div className="p-4 border-t border-gray-200 bg-white">

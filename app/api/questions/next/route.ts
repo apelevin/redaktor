@@ -13,13 +13,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const question = await generateNextQuestion(
+    const result = await generateNextQuestion(
       documentType || '',
       context || {},
       answeredQuestionIds || []
     );
 
-    return NextResponse.json({ question });
+    return NextResponse.json({ 
+      question: result.question,
+      usage: result.usage,
+      model: result.model,
+    });
   } catch (error) {
     console.error('Error in /api/questions/next:', error);
     return NextResponse.json(

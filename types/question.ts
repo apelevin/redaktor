@@ -1,5 +1,7 @@
 export type QuestionUiKind = 'open' | 'single' | 'multi';
 
+export type RequiredLevel = 'must' | 'recommended' | 'optional';
+
 export type ValueType =
   | 'string'
   | 'number'
@@ -24,7 +26,8 @@ export interface Question {
   uiKind: QuestionUiKind;    // open | single | multi
   valueType: ValueType;      // enum, enum[], string и т.д.
 
-  isRequired: boolean;       // обязателен ли вопрос для генерации документа
+  isRequired: boolean;       // обязателен ли вопрос для генерации документа (back-compat)
+  requiredLevel?: RequiredLevel; // NEW: must / recommended / optional
 
   options?: QuestionOption[]; // варианты ответа (для single/multi)
   allowOther?: boolean;       // можно ли дописать свой вариант (поле "Другое")

@@ -2,6 +2,13 @@ import OpenAI from 'openai';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { Question } from '@/types/question';
+import type { TokenUsage } from '@/lib/utils/cost-calculator';
+
+export interface QuestionGenerationResult {
+  question: Question | null;
+  usage?: TokenUsage;
+  model?: string;
+}
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error('OPENAI_API_KEY is not set');
@@ -44,12 +51,13 @@ export async function generateNextQuestion(
   documentType: string,
   context: Record<string, any>,
   answeredQuestionIds: string[]
-): Promise<Question | null> {
+): Promise<QuestionGenerationResult> {
   const prompt = getPrompt(documentType, context, answeredQuestionIds);
+  const model = process.env.OPENAI_MODEL || 'gpt-5.1';
 
   try {
     const response = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-5.1',
+      model,
       messages: [
         {
           role: 'system',
@@ -65,9 +73,20 @@ export async function generateNextQuestion(
       // Для GPT-5.1 эти параметры можно добавить, когда SDK будет обновлен
     });
 
+    const usage: TokenUsage | undefined = response.usage ? {
+      prompt_tokens: response.usage.prompt_tokens || 0,
+      completion_tokens: response.usage.completion_tokens || 0,
+      total_tokens: response.usage.total_tokens || 0,
+      cached_tokens: (response.usage as any).cached_tokens || 0,
+    } : undefined;
+
     const content = response.choices[0]?.message?.content;
     if (!content) {
-      return null;
+      return { 
+        question: null,
+        usage,
+        model,
+      };
     }
 
     // Парсим JSON из ответа
@@ -77,12 +96,20 @@ export async function generateNextQuestion(
     } catch (parseError) {
       console.error('Error parsing JSON from response:', parseError);
       console.error('Response content:', content);
-      return null;
+      return { 
+        question: null,
+        usage,
+        model,
+      };
     }
 
     // Если вернулся null, значит контекст достаточен
     if (parsed === null) {
-      return null;
+      return { 
+        question: null,
+        usage,
+        model,
+      };
     }
 
     // Валидация структуры Question
@@ -94,13 +121,21 @@ export async function generateNextQuestion(
       typeof parsed.isRequired === 'boolean' &&
       Array.isArray(parsed.affects)
     ) {
-      return parsed as Question;
+      return {
+        question: parsed as Question,
+        usage,
+        model,
+      };
     }
 
     console.error('Invalid question structure:', parsed);
-    return null;
+    return { 
+      question: null,
+      usage,
+      model,
+    };
   } catch (error) {
     console.error('Error generating question:', error);
-    return null;
+    return { question: null };
   }
 }

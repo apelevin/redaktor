@@ -1,17 +1,52 @@
 import type { Question, QuestionAnswer } from '@/types/question';
 
 /**
+ * Устанавливает значение в объект по пути (dot-notation)
+ */
+function setValue(obj: any, path: string, value: any): void {
+  const keys = path.split('.');
+  let current = obj;
+  
+  for (let i = 0; i < keys.length - 1; i++) {
+    const key = keys[i];
+    if (!(key in current) || typeof current[key] !== 'object' || current[key] === null) {
+      current[key] = {};
+    }
+    current = current[key];
+  }
+  
+  current[keys[keys.length - 1]] = value;
+}
+
+/**
  * Мерджит ответ пользователя в контекст документа
- * Пока простое сохранение: добавляет raw ответ в контекст по ключу questionId
- * В будущем здесь будет нормализация через LLM
+ * Заполняет пути из question.affects значениями из ответа
  */
 export function mergeAnswerToContext(
   context: Record<string, any>,
   answer: QuestionAnswer,
   question: Question
 ): Record<string, any> {
-  // Обрабатываем разные типы ответов
+  const newContext = { ...context };
+  
+  // Определяем значение для сохранения
   let valueToStore: any = answer.raw;
+  
+  // Для single-choice вопросов: если выбран option, берем его value
+  if (question.uiKind === 'single' && question.options && answer.selectedOptionIds && answer.selectedOptionIds.length > 0) {
+    const selectedOptionId = answer.selectedOptionIds[0];
+    const selectedOption = question.options.find(opt => opt.id === selectedOptionId);
+    if (selectedOption) {
+      valueToStore = selectedOption.value;
+    }
+  }
+  
+  // Для multi-choice вопросов: берем values всех выбранных опций
+  if (question.uiKind === 'multi' && question.options && answer.selectedOptionIds && answer.selectedOptionIds.length > 0) {
+    valueToStore = answer.selectedOptionIds
+      .map(id => question.options?.find(opt => opt.id === id)?.value)
+      .filter(Boolean);
+  }
   
   // Если это условный ответ (объект с option и details)
   if (
@@ -19,25 +54,20 @@ export function mergeAnswerToContext(
     !Array.isArray(answer.raw) &&
     'option' in answer.raw
   ) {
-    // Сохраняем структурированный объект
-    valueToStore = {
-      option: answer.raw.option,
-      details: answer.raw.details || null,
-    };
+    // Для условных ответов сохраняем option как значение
+    valueToStore = answer.raw.option;
+    // Если есть details, можно сохранить их отдельно (пока не реализовано)
   }
   
-  // Пока просто сохраняем raw ответ по questionId
-  // В будущем здесь будет нормализация через LLM и заполнение полей из question.affects
-  const newContext = {
-    ...context,
-    [answer.questionId]: valueToStore,
-  };
-
-  // TODO: Реализовать нормализацию через LLM и заполнение полей из question.affects
-  // Например, если question.affects = ['payment.model'], то нужно:
-  // 1. Отправить raw ответ в LLM с промптом на нормализацию
-  // 2. Получить структурированные данные
-  // 3. Заполнить context.payment.model
+  // Заполняем все пути из question.affects
+  if (question.affects && question.affects.length > 0) {
+    for (const path of question.affects) {
+      setValue(newContext, path, valueToStore);
+    }
+  }
+  
+  // Также сохраняем raw ответ по questionId для обратной совместимости
+  newContext[answer.questionId] = answer.raw;
 
   return newContext;
 }
