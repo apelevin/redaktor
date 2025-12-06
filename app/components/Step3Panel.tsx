@@ -11,8 +11,12 @@ export default function Step3Panel() {
     documentType,
     generatedContext,
     skeleton,
+    selectedSkeletonItems,
     setCurrentStep,
     setSkeleton,
+    toggleSkeletonItem,
+    selectAllSkeletonItems,
+    deselectAllSkeletonItems,
     addCostRecord,
   } = useDocumentStore();
 
@@ -130,13 +134,27 @@ export default function Step3Panel() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold">Структура документа</h2>
-                <button
-                  onClick={handleGenerateSkeleton}
-                  disabled={isGenerating}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                >
-                  {isGenerating ? 'Регенерация...' : 'Регенерировать'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => selectAllSkeletonItems()}
+                    className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-medium text-sm"
+                  >
+                    Выбрать все
+                  </button>
+                  <button
+                    onClick={() => deselectAllSkeletonItems()}
+                    className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium text-sm"
+                  >
+                    Снять все
+                  </button>
+                  <button
+                    onClick={handleGenerateSkeleton}
+                    disabled={isGenerating}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  >
+                    {isGenerating ? 'Регенерация...' : 'Регенерировать'}
+                  </button>
+                </div>
               </div>
               {error && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -144,22 +162,61 @@ export default function Step3Panel() {
                 </div>
               )}
               <div className="space-y-4">
-                {skeleton.map((section: Section) => (
-                  <div key={section.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                    <h3 className="font-semibold text-gray-800 mb-2">{section.title}</h3>
-                    {section.items && section.items.length > 0 ? (
-                      <ul className="list-disc list-inside space-y-1 ml-4">
-                        {section.items.map((item, index) => (
-                          <li key={index} className="text-sm text-gray-700">
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-gray-500 italic">Пункты не указаны</p>
-                    )}
-                  </div>
-                ))}
+                {skeleton.map((section: Section) => {
+                  const sectionItemKeys = section.items.map((_, index) => `${section.id}-${index}`);
+                  const sectionSelectedCount = sectionItemKeys.filter((key) =>
+                    selectedSkeletonItems.has(key)
+                  ).length;
+                  const isSectionAllSelected = section.items.length > 0 && sectionSelectedCount === section.items.length;
+                  const isSectionSomeSelected = sectionSelectedCount > 0 && sectionSelectedCount < section.items.length;
+
+                  return (
+                    <div key={section.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-semibold text-gray-800">{section.title}</h3>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => selectAllSkeletonItems(section.id)}
+                            className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 font-medium"
+                          >
+                            Выбрать все
+                          </button>
+                          <button
+                            onClick={() => deselectAllSkeletonItems(section.id)}
+                            className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200 font-medium"
+                          >
+                            Снять все
+                          </button>
+                        </div>
+                      </div>
+                      {section.items && section.items.length > 0 ? (
+                        <div className="space-y-2">
+                          {section.items.map((item, index) => {
+                            const itemKey = `${section.id}-${index}`;
+                            const isChecked = selectedSkeletonItems.has(itemKey);
+                            
+                            return (
+                              <label
+                                key={index}
+                                className="flex items-start gap-2 cursor-pointer hover:bg-gray-100 p-2 rounded -ml-2"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggleSkeletonItem(section.id, index)}
+                                  className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <span className="text-sm text-gray-700 flex-1">{item}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500 italic">Пункты не указаны</p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

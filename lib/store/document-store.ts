@@ -27,6 +27,7 @@ interface DocumentStore {
   currentStep: PipelineStep;
   generatedContext: string | null; // Полное описание договора, сгенерированное на шаге 2
   skeleton: Section[] | null; // Скелет документа, сгенерированный на шаге 3
+  selectedSkeletonItems: Set<string>; // Выбранные пункты скелета (ключ: sectionId-itemIndex)
   costRecords: CostRecord[];
 
   // Actions
@@ -40,6 +41,9 @@ interface DocumentStore {
   setCurrentStep: (step: PipelineStep) => void;
   setGeneratedContext: (context: string | null) => void;
   setSkeleton: (skeleton: Section[]) => void;
+  toggleSkeletonItem: (sectionId: string, itemIndex: number) => void;
+  selectAllSkeletonItems: (sectionId?: string) => void;
+  deselectAllSkeletonItems: (sectionId?: string) => void;
   addCostRecord: (model: string, usage: TokenUsage, operation: string) => void;
   reset: () => void;
   
@@ -56,6 +60,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   currentStep: 'step1',
   generatedContext: null,
   skeleton: null,
+  selectedSkeletonItems: new Set<string>(),
   costRecords: [],
 
   setDocumentType: (type) => set({ 
@@ -69,6 +74,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     currentStep: 'step1',
     generatedContext: null,
     skeleton: null,
+    selectedSkeletonItems: new Set<string>(),
     costRecords: [], // Сбрасываем затраты при новом документе
   }),
 
@@ -94,7 +100,68 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
 
   setGeneratedContext: (context) => set({ generatedContext: context }),
 
-  setSkeleton: (skeleton) => set({ skeleton }),
+  setSkeleton: (skeleton) => {
+    set({ skeleton, selectedSkeletonItems: new Set<string>() });
+  },
+
+  toggleSkeletonItem: (sectionId, itemIndex) => {
+    const key = `${sectionId}-${itemIndex}`;
+    set((state) => {
+      const newSet = new Set(state.selectedSkeletonItems);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return { selectedSkeletonItems: newSet };
+    });
+  },
+
+  selectAllSkeletonItems: (sectionId) => {
+    set((state) => {
+      if (!state.skeleton) return state;
+      const newSet = new Set(state.selectedSkeletonItems);
+      
+      if (sectionId) {
+        // Выбрать все в конкретной секции
+        const section = state.skeleton.find((s) => s.id === sectionId);
+        if (section) {
+          section.items.forEach((_, index) => {
+            newSet.add(`${sectionId}-${index}`);
+          });
+        }
+      } else {
+        // Выбрать все во всех секциях
+        state.skeleton.forEach((section) => {
+          section.items.forEach((_, index) => {
+            newSet.add(`${section.id}-${index}`);
+          });
+        });
+      }
+      return { selectedSkeletonItems: newSet };
+    });
+  },
+
+  deselectAllSkeletonItems: (sectionId) => {
+    set((state) => {
+      if (!state.skeleton) return state;
+      const newSet = new Set(state.selectedSkeletonItems);
+      
+      if (sectionId) {
+        // Снять выбор со всех в конкретной секции
+        const section = state.skeleton.find((s) => s.id === sectionId);
+        if (section) {
+          section.items.forEach((_, index) => {
+            newSet.delete(`${sectionId}-${index}`);
+          });
+        }
+      } else {
+        // Снять выбор со всех секций
+        newSet.clear();
+      }
+      return { selectedSkeletonItems: newSet };
+    });
+  },
 
   addCostRecord: (model, usage, operation) => {
     const cost = calculateCost(model, usage).totalCost;
@@ -122,6 +189,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     currentStep: 'step1',
     generatedContext: null,
     skeleton: null,
+    selectedSkeletonItems: new Set<string>(),
     costRecords: [],
   }),
 }));
