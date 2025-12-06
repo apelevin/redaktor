@@ -28,6 +28,9 @@ interface DocumentStore {
   generatedContext: string | null; // Полное описание договора, сгенерированное на шаге 2
   skeleton: Section[] | null; // Скелет документа, сгенерированный на шаге 3
   selectedSkeletonItems: Set<string>; // Выбранные пункты скелета (ключ: sectionId-itemIndex)
+  skeletonConfirmed: boolean; // Флаг подтверждения структуры
+  currentSkeletonItem: { sectionId: string; itemIndex: number } | null; // Текущий пункт, по которому задается вопрос
+  skeletonItemAnswers: Record<string, any>; // Ответы по пунктам скелета (ключ: sectionId-itemIndex)
   costRecords: CostRecord[];
 
   // Actions
@@ -44,6 +47,9 @@ interface DocumentStore {
   toggleSkeletonItem: (sectionId: string, itemIndex: number) => void;
   selectAllSkeletonItems: (sectionId?: string) => void;
   deselectAllSkeletonItems: (sectionId?: string) => void;
+  confirmSkeleton: () => void;
+  setCurrentSkeletonItem: (item: { sectionId: string; itemIndex: number } | null) => void;
+  addSkeletonItemAnswer: (sectionId: string, itemIndex: number, answer: any) => void;
   addCostRecord: (model: string, usage: TokenUsage, operation: string) => void;
   reset: () => void;
   
@@ -61,6 +67,9 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   generatedContext: null,
   skeleton: null,
   selectedSkeletonItems: new Set<string>(),
+  skeletonConfirmed: false,
+  currentSkeletonItem: null,
+  skeletonItemAnswers: {},
   costRecords: [],
 
   setDocumentType: (type) => set({ 
@@ -75,6 +84,9 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     generatedContext: null,
     skeleton: null,
     selectedSkeletonItems: new Set<string>(),
+    skeletonConfirmed: false,
+    currentSkeletonItem: null,
+    skeletonItemAnswers: {},
     costRecords: [], // Сбрасываем затраты при новом документе
   }),
 
@@ -163,6 +175,17 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     });
   },
 
+  confirmSkeleton: () => set({ skeletonConfirmed: true }),
+
+  setCurrentSkeletonItem: (item) => set({ currentSkeletonItem: item }),
+
+  addSkeletonItemAnswer: (sectionId, itemIndex, answer) => {
+    const key = `${sectionId}-${itemIndex}`;
+    set((state) => ({
+      skeletonItemAnswers: { ...state.skeletonItemAnswers, [key]: answer },
+    }));
+  },
+
   addCostRecord: (model, usage, operation) => {
     const cost = calculateCost(model, usage).totalCost;
     const record: CostRecord = {
@@ -190,6 +213,9 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     generatedContext: null,
     skeleton: null,
     selectedSkeletonItems: new Set<string>(),
+    skeletonConfirmed: false,
+    currentSkeletonItem: null,
+    skeletonItemAnswers: {},
     costRecords: [],
   }),
 }));

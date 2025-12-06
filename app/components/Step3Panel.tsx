@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useDocumentStore } from '@/lib/store/document-store';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
 import CostDisplay from './CostDisplay';
+import SkeletonChatPanel from './SkeletonChatPanel';
 
 export default function Step3Panel() {
   const {
@@ -12,6 +13,9 @@ export default function Step3Panel() {
     generatedContext,
     skeleton,
     selectedSkeletonItems,
+    skeletonConfirmed,
+    currentSkeletonItem,
+    confirmSkeleton,
     setCurrentStep,
     setSkeleton,
     toggleSkeletonItem,
@@ -78,6 +82,114 @@ export default function Step3Panel() {
   const handleBack = () => {
     setCurrentStep('step2');
   };
+
+  const handleConfirmSkeleton = () => {
+    if (selectedSkeletonItems.size === 0) {
+      setError('Выберите хотя бы один пункт для подтверждения');
+      return;
+    }
+    confirmSkeleton();
+  };
+
+  // Получаем список выбранных пунктов с их информацией
+  const selectedItemsList = useMemo(() => {
+    if (!skeleton) return [];
+    
+    const items: Array<{ sectionId: string; itemIndex: number; sectionTitle: string; itemText: string }> = [];
+    
+    skeleton.forEach((section) => {
+      section.items.forEach((item, index) => {
+        const itemKey = `${section.id}-${index}`;
+        if (selectedSkeletonItems.has(itemKey)) {
+          items.push({
+            sectionId: section.id,
+            itemIndex: index,
+            sectionTitle: section.title,
+            itemText: item,
+          });
+        }
+      });
+    });
+    
+    return items;
+  }, [skeleton, selectedSkeletonItems]);
+
+  const handleAllItemsProcessed = () => {
+    // Все пункты обработаны, можно переходить к следующему шагу
+    // TODO: Переход к следующему шагу (генерация текста документа)
+  };
+
+  // Если структура подтверждена, показываем двухпанельный layout
+  if (skeletonConfirmed && skeleton) {
+    return (
+      <div className="h-screen flex bg-gray-50">
+        {/* Левая панель: скелет (readonly) */}
+        <div className="w-1/2 border-r border-gray-200 flex flex-col bg-white">
+          <div className="p-4 border-b border-gray-200">
+            <h1 className="text-2xl font-bold">Структура документа</h1>
+            <p className="text-sm text-gray-600 mt-1">Выбранные пункты будут использованы для генерации текста</p>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="space-y-4">
+              {skeleton.map((section: Section) => (
+                <div key={section.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <h3 className="font-semibold text-gray-800 mb-2">{section.title}</h3>
+                  {section.items && section.items.length > 0 ? (
+                    <div className="space-y-2">
+                      {section.items.map((item, index) => {
+                        const itemKey = `${section.id}-${index}`;
+                        const isChecked = selectedSkeletonItems.has(itemKey);
+                        const isCurrent = currentSkeletonItem?.sectionId === section.id && 
+                                         currentSkeletonItem?.itemIndex === index;
+                        
+                        return (
+                          <div
+                            key={index}
+                            className={`flex items-start gap-2 p-2 rounded ${
+                              isCurrent 
+                                ? 'bg-blue-100 border-2 border-blue-500' 
+                                : isChecked 
+                                ? 'bg-green-50 border border-green-200' 
+                                : 'bg-gray-100 border border-gray-200 opacity-50'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              disabled
+                              className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded"
+                            />
+                            <span className={`text-sm flex-1 ${
+                              isCurrent ? 'font-semibold text-blue-900' : 'text-gray-700'
+                            }`}>
+                              {item}
+                              {isCurrent && (
+                                <span className="ml-2 text-xs text-blue-600">← Текущий пункт</span>
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">Пункты не указаны</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Правая панель: чат */}
+        <div className="w-1/2">
+          <SkeletonChatPanel
+            selectedItems={selectedItemsList}
+            onAllItemsProcessed={handleAllItemsProcessed}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -159,6 +271,16 @@ export default function Step3Panel() {
               {error && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                   <p className="text-red-700">{error}</p>
+                </div>
+              )}
+              {selectedSkeletonItems.size > 0 && (
+                <div className="mb-4 pt-4 border-t border-gray-200">
+                  <button
+                    onClick={handleConfirmSkeleton}
+                    className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
+                  >
+                    Подтвердить структуру ({selectedSkeletonItems.size} пунктов выбрано)
+                  </button>
                 </div>
               )}
               <div className="space-y-4">

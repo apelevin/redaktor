@@ -192,34 +192,95 @@ export default function ChatPanel() {
         const isAlreadyAnswered = isQuestionAnswered(question, newContext);
         if (isAlreadyAnswered) {
           // Если вопрос уже отвечен, не показываем его снова
-          // Но продолжаем запрашивать следующий вопрос
+          // Продолжаем запрашивать следующий вопрос (но ограничим количество попыток)
+          let attempts = 0;
+          let foundUnansweredQuestion = false;
+          
+          while (attempts < 5 && !foundUnansweredQuestion) {
+            attempts++;
+            const answeredQuestionIds = allQuestions
+              .filter(q => isQuestionAnswered(q, newContext))
+              .map(q => q.id);
+            
+            const nextResponse = await fetch('/api/questions/next', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                documentType: documentType || '',
+                context: newContext,
+                answeredQuestionIds,
+              }),
+            });
+            
+            const nextData = await nextResponse.json();
+            
+            // Отслеживаем затраты
+            if (nextData.usage && nextData.model) {
+              addCostRecord(nextData.model, nextData.usage as TokenUsage, 'question_generation');
+            }
+            
+            if (nextData.question) {
+              const nextQuestion = nextData.question as Question;
+              const nextIsAlreadyAnswered = isQuestionAnswered(nextQuestion, newContext);
+              if (!nextIsAlreadyAnswered) {
+                // Нашли неотвеченный вопрос - обрабатываем его
+                const nextQuestionAlreadyExists = allQuestions.find(q => q.id === nextQuestion.id);
+                if (!nextQuestionAlreadyExists) {
+                  addQuestion(nextQuestion);
+                }
+                
+                const nextQuestionAlreadyInMessages = messages.some(
+                  msg => msg.type === 'question' && typeof msg.content !== 'string' && msg.content.id === nextQuestion.id
+                );
+                
+                if (!nextQuestionAlreadyInMessages) {
+                  setCurrentQuestionState(nextQuestion);
+                  setCurrentQuestion(nextQuestion.id);
+                  addMessage('question', nextQuestion);
+                } else {
+                  setCurrentQuestionState(nextQuestion);
+                  setCurrentQuestion(nextQuestion.id);
+                }
+                foundUnansweredQuestion = true;
+                setIsLoading(false);
+                return;
+              }
+              // Если следующий вопрос тоже уже отвечен, продолжаем цикл
+            } else {
+              // API вернул null - нет больше вопросов, переходим к проверке завершенности
+              foundUnansweredQuestion = true; // Выходим из цикла
+            }
+          }
+          
+          // Если не нашли неотвеченный вопрос после нескольких попыток, переходим к проверке завершенности
+          setIsLoading(false);
+          // Продолжаем выполнение кода ниже для проверки завершенности
+        } else {
+          // Вопрос еще не отвечен - показываем его
+          // Проверяем, не был ли этот вопрос уже задан
+          const questionAlreadyExists = allQuestions.find(q => q.id === question.id);
+          if (!questionAlreadyExists) {
+            addQuestion(question);
+          }
+          
+          // Проверяем, не был ли этот вопрос уже добавлен в сообщения
+          const questionAlreadyInMessages = messages.some(
+            msg => msg.type === 'question' && typeof msg.content !== 'string' && msg.content.id === question.id
+          );
+          
+          if (!questionAlreadyInMessages) {
+            setCurrentQuestionState(question);
+            setCurrentQuestion(question.id);
+            addMessage('question', question);
+          } else {
+            // Вопрос уже был задан, просто устанавливаем его как текущий
+            setCurrentQuestionState(question);
+            setCurrentQuestion(question.id);
+          }
+          
           setIsLoading(false);
           return;
         }
-        
-        // Проверяем, не был ли этот вопрос уже задан
-        const questionAlreadyExists = allQuestions.find(q => q.id === question.id);
-        if (!questionAlreadyExists) {
-          addQuestion(question);
-        }
-        
-        // Проверяем, не был ли этот вопрос уже добавлен в сообщения
-        const questionAlreadyInMessages = messages.some(
-          msg => msg.type === 'question' && typeof msg.content !== 'string' && msg.content.id === question.id
-        );
-        
-        if (!questionAlreadyInMessages) {
-          setCurrentQuestionState(question);
-          setCurrentQuestion(question.id);
-          addMessage('question', question);
-        } else {
-          // Вопрос уже был задан, просто устанавливаем его как текущий
-          setCurrentQuestionState(question);
-          setCurrentQuestion(question.id);
-        }
-        
-        setIsLoading(false);
-        return;
       }
     } catch (error) {
       console.error('Error getting next question:', error);
