@@ -3,6 +3,7 @@ import type { Question, QuestionAnswer } from '@/types/question';
 import type { CompletionState, NextStep } from '@/types/completion';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import { calculateCost } from '@/lib/utils/cost-calculator';
+import type { Section } from '@/types/document';
 
 export interface CostRecord {
   id: string;
@@ -13,6 +14,8 @@ export interface CostRecord {
   operation: string; // 'question_generation' | 'completion_message' | 'skeleton' | 'clause' | 'context_completion'
 }
 
+export type PipelineStep = 'step1' | 'step2' | 'step3';
+
 interface DocumentStore {
   documentType: string | null;
   context: Record<string, any>;
@@ -21,6 +24,9 @@ interface DocumentStore {
   currentQuestionId: string | null;
   completionState: CompletionState | null;
   nextStep: NextStep | null;
+  currentStep: PipelineStep;
+  generatedContext: string | null; // Полное описание договора, сгенерированное на шаге 2
+  skeleton: Section[] | null; // Скелет документа, сгенерированный на шаге 3
   costRecords: CostRecord[];
 
   // Actions
@@ -31,11 +37,12 @@ interface DocumentStore {
   updateContext: (updates: Record<string, any>) => void;
   setCompletionState: (state: CompletionState | null) => void;
   setNextStep: (step: NextStep | null) => void;
+  setCurrentStep: (step: PipelineStep) => void;
+  setGeneratedContext: (context: string | null) => void;
+  setSkeleton: (skeleton: Section[]) => void;
   addCostRecord: (model: string, usage: TokenUsage, operation: string) => void;
   reset: () => void;
   
-  // Computed
-  totalCost: number;
 }
 
 export const useDocumentStore = create<DocumentStore>((set, get) => ({
@@ -46,6 +53,9 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   currentQuestionId: null,
   completionState: null,
   nextStep: null,
+  currentStep: 'step1',
+  generatedContext: null,
+  skeleton: null,
   costRecords: [],
 
   setDocumentType: (type) => set({ 
@@ -56,6 +66,9 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     currentQuestionId: null,
     completionState: null,
     nextStep: null,
+    currentStep: 'step1',
+    generatedContext: null,
+    skeleton: null,
     costRecords: [], // Сбрасываем затраты при новом документе
   }),
 
@@ -76,6 +89,12 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   setCompletionState: (state) => set({ completionState: state }),
 
   setNextStep: (step) => set({ nextStep: step }),
+
+  setCurrentStep: (step) => set({ currentStep: step }),
+
+  setGeneratedContext: (context) => set({ generatedContext: context }),
+
+  setSkeleton: (skeleton) => set({ skeleton }),
 
   addCostRecord: (model, usage, operation) => {
     const cost = calculateCost(model, usage).totalCost;
@@ -100,14 +119,18 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     currentQuestionId: null,
     completionState: null,
     nextStep: null,
+    currentStep: 'step1',
+    generatedContext: null,
+    skeleton: null,
     costRecords: [],
   }),
-
-  get totalCost() {
-    const records = get().costRecords;
-    return records.reduce((sum, record) => sum + record.cost, 0);
-  },
 }));
+
+// Селектор для вычисления totalCost
+export const useTotalCost = () => {
+  const costRecords = useDocumentStore((state) => state.costRecords);
+  return costRecords.reduce((sum, record) => sum + record.cost, 0);
+};
 
 // Селектор для вычисления canGenerateContract
 export const useCanGenerateContract = () => {

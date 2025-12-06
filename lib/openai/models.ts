@@ -5,6 +5,7 @@
 export type PipelineStep = 
   | 'question_generation'
   | 'context_completion'
+  | 'context_generation'
   | 'skeleton_generation'
   | 'clause_generation';
 
@@ -27,6 +28,11 @@ const defaultModelConfig: Record<PipelineStep, ModelConfig> = {
     model: 'gpt-5-mini',
     reasoning_effort: 'medium',
     verbosity: 'low',
+  },
+  context_generation: {
+    model: 'gpt-5.1',
+    reasoning_effort: 'medium',
+    verbosity: 'medium',
   },
   skeleton_generation: {
     model: 'gpt-5.1',

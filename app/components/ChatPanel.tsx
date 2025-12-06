@@ -298,9 +298,7 @@ export default function ChatPanel() {
       <div className="p-4 border-b border-gray-200 bg-white">
         <div className="flex items-start justify-between mb-4">
           <h2 className="text-2xl font-bold">Чат</h2>
-          <div className="w-48">
-            <CostDisplay />
-          </div>
+          <CostDisplay />
         </div>
         
         {!documentType ? (

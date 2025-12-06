@@ -6,7 +6,8 @@ import type { Section } from '@/types/document';
 
 export interface SkeletonGenerationParams {
   document_type: string;
-  qa_context: Array<{ question: string; answer: string }>;
+  qa_context?: Array<{ question: string; answer: string }>;
+  generatedContext?: string | null;
   jurisdiction?: string;
   style?: string;
 }
@@ -22,15 +23,19 @@ export async function generateSkeleton(
 ): Promise<SkeletonGenerationResult> {
   const client = getOpenAIClient();
   
-  const qaContextText = params.qa_context
-    .map(qa => `В: ${qa.question}\nО: ${qa.answer}`)
-    .join('\n\n');
+  // Если есть generatedContext, используем его, иначе используем qa_context
+  const contextText = params.generatedContext 
+    ? params.generatedContext
+    : (params.qa_context
+        ? params.qa_context.map(qa => `В: ${qa.question}\nО: ${qa.answer}`).join('\n\n')
+        : 'Контекст не собран.');
   
   const prompt = await loadAndRenderPrompt('skeleton-generation.md', {
     document_type: params.document_type,
     jurisdiction: params.jurisdiction ? `Юрисдикция: ${params.jurisdiction}` : '',
     style: params.style ? `Стиль: ${params.style}` : '',
-    qa_context: qaContextText || 'Контекст не собран.',
+    context: contextText,
+    has_generated_context: params.generatedContext ? 'true' : 'false',
   });
   
   try {
@@ -62,8 +67,16 @@ export async function generateSkeleton(
     
     const result = JSON.parse(content);
     
-    if (!result.skeleton || !Array.isArray(result.skeleton)) {
-      throw new Error('Invalid skeleton format');
+    // Валидация нового формата: проверяем наличие sections
+    if (!result.sections || !Array.isArray(result.sections)) {
+      throw new Error('Invalid skeleton format: missing or invalid sections array');
+    }
+    
+    // Валидация структуры каждой секции
+    for (const section of result.sections) {
+      if (!section.id || !section.title || !Array.isArray(section.items)) {
+        throw new Error(`Invalid section format: ${JSON.stringify(section)}`);
+      }
     }
     
     // Возвращаем данные об использовании токенов для расчета стоимости на клиенте
@@ -75,7 +88,7 @@ export async function generateSkeleton(
     } : undefined;
     
     return {
-      skeleton: result.skeleton as Section[],
+      skeleton: result.sections as Section[],
       usage,
       model: modelConfig.model,
     };

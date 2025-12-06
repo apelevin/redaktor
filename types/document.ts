@@ -6,8 +6,7 @@ export interface QAContext {
 export interface Section {
   id: string;
   title: string;
-  level: number;
-  subsections?: Section[];
+  items: string[];
 }
 
 export interface Clause {

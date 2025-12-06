@@ -4,7 +4,7 @@ import { generateSkeleton } from '@/lib/openai/skeleton-generator';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { document_type, qa_context, jurisdiction, style } = body;
+    const { document_type, qa_context, generated_context, jurisdiction, style } = body;
     
     if (!document_type) {
       return NextResponse.json(
@@ -13,13 +13,14 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Разрешаем пустой qa_context - skeleton можно сгенерировать и без контекста
-    // если есть только document_type
+    // Если есть generated_context, используем его, иначе используем qa_context
     const finalQaContext = qa_context || [];
+    const finalGeneratedContext = generated_context || null;
     
     const result = await generateSkeleton({
       document_type,
-      qa_context: finalQaContext,
+      qa_context: finalGeneratedContext ? undefined : finalQaContext,
+      generatedContext: finalGeneratedContext,
       jurisdiction,
       style,
     });
