@@ -3,6 +3,7 @@ import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
 import { getModelConfig } from './models';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { DocumentMode } from '@/types/document-mode';
+import type { TermsDictionary } from '@/types/terms';
 
 export interface DocumentItemGenerationParams {
   document_type: string;
@@ -16,6 +17,7 @@ export interface DocumentItemGenerationParams {
   jurisdiction?: string;
   style?: string;
   document_mode?: DocumentMode;
+  terms?: TermsDictionary | null;
 }
 
 export interface DocumentItemGenerationResult {
@@ -46,6 +48,11 @@ export async function generateDocumentItem(
         .join('\n\n')
     : 'Пока нет сгенерированных текстов.';
 
+  // Сериализуем terms в текстовый формат для промпта
+  const termsText = params.terms && params.terms.length > 0
+    ? params.terms.map(term => `"${term.name}" — ${term.definition}`).join('\n')
+    : '';
+
   const prompt = await loadAndRenderPrompt('document-item-generation.md', {
     document_type: params.document_type,
     jurisdiction: params.jurisdiction ? `Юрисдикция: ${params.jurisdiction}` : '',
@@ -56,6 +63,7 @@ export async function generateDocumentItem(
     item_answers: itemAnswersText,
     existing_clauses: existingClausesText,
     document_mode: params.document_mode || 'short',
+    terms: termsText,
   });
   
   try {

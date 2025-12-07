@@ -5,6 +5,7 @@ import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import { calculateCost } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
 import type { DocumentMode } from '@/types/document-mode';
+import type { TermsDictionary } from '@/types/terms';
 
 export interface CostRecord {
   id: string;
@@ -37,6 +38,7 @@ interface DocumentStore {
   costRecords: CostRecord[];
   documentMode: DocumentMode; // Режим генерации документа
   outputTextMode: DocumentMode | null; // Режим генерации текста (null = использовать documentMode)
+  terms: TermsDictionary | null; // Словарь терминов договора
 
   // Actions
   setDocumentType: (type: string | null) => void;
@@ -61,6 +63,7 @@ interface DocumentStore {
   addCostRecord: (model: string, usage: TokenUsage, operation: string) => void;
   setDocumentMode: (mode: DocumentMode) => void;
   setOutputTextMode: (mode: DocumentMode | null) => void;
+  setTerms: (terms: TermsDictionary | null) => void;
   reset: () => void;
   
 }
@@ -85,6 +88,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   costRecords: [],
   documentMode: 'short',
   outputTextMode: null,
+  terms: null,
 
   setDocumentType: (type) => set({ 
     documentType: type, 
@@ -106,6 +110,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     costRecords: [], // Сбрасываем затраты при новом документе
     documentMode: 'short',
     outputTextMode: null,
+    terms: null,
   }),
 
   addAnswer: (answer) => set((state) => ({
@@ -234,6 +239,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
 
   setOutputTextMode: (mode) => set({ outputTextMode: mode }),
 
+  setTerms: (terms) => set({ terms }),
+
   reset: () => set({
     documentType: null,
     context: {},
@@ -254,6 +261,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     costRecords: [],
     documentMode: 'short',
     outputTextMode: null,
+    terms: null,
   }),
 }));
 

@@ -19,11 +19,13 @@ export default function Step3Panel() {
     skeletonConfirmed,
     currentSkeletonItem,
     documentMode,
+    terms,
     confirmSkeleton,
     setCurrentStep,
     setSkeleton,
     setDocumentMode,
     setSelectedSkeletonItems,
+    setTerms,
     toggleSkeletonItem,
     selectAllSkeletonItems,
     deselectAllSkeletonItems,
@@ -48,6 +50,47 @@ export default function Step3Panel() {
     setError(null);
 
     try {
+      // Генерируем термины, если они еще не сгенерированы
+      let currentTerms = terms;
+      if (!currentTerms || currentTerms.length === 0) {
+        try {
+          const termsResponse = await fetch('/api/pipeline/terms-generation', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              document_type: documentType,
+              generated_context: generatedContext,
+            }),
+          });
+
+          if (!termsResponse.ok) {
+            const errorData = await termsResponse.json();
+            console.warn('Failed to generate terms:', errorData.error);
+            // Продолжаем без терминов, если генерация не удалась
+            currentTerms = null;
+          } else {
+            const termsData = await termsResponse.json();
+            if (termsData.terms && Array.isArray(termsData.terms) && termsData.terms.length > 0) {
+              currentTerms = termsData.terms;
+              setTerms(currentTerms);
+              
+              // Отслеживаем затраты на генерацию терминов
+              if (termsData.usage && termsData.model) {
+                addCostRecord(termsData.model, termsData.usage, 'terms_generation');
+              }
+            } else {
+              currentTerms = null;
+            }
+          }
+        } catch (termsError) {
+          console.warn('Error generating terms:', termsError);
+          // Продолжаем без терминов, если генерация не удалась
+          currentTerms = null;
+        }
+      }
+
       const response = await fetch('/api/pipeline/skeleton', {
         method: 'POST',
         headers: {
@@ -57,6 +100,7 @@ export default function Step3Panel() {
           document_type: documentType,
           generated_context: generatedContext,
           document_mode: documentMode,
+          terms: currentTerms,
         }),
       });
 

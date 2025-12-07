@@ -18,6 +18,7 @@ export default function Step4Panel() {
     documentClauses,
     documentMode,
     outputTextMode,
+    terms,
     setCurrentStep,
     setOutputTextMode,
     addDocumentClause,
@@ -116,6 +117,7 @@ export default function Step4Panel() {
           item_answers: skeletonItemAnswers[itemKey] || null,
           existing_clauses: documentClauses,
           document_mode: outputTextMode || documentMode,
+          terms: terms,
         }),
       });
 
