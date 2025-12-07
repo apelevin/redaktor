@@ -16,6 +16,7 @@ export default function Step4Panel() {
     selectedSkeletonItems,
     skeletonItemAnswers,
     documentClauses,
+    generatedDocument,
     documentMode,
     outputTextMode,
     terms,
@@ -168,7 +169,7 @@ export default function Step4Panel() {
       });
 
       if (hasItems && !processedSections.has(section.id)) {
-        sections.push(`\n${section.title}\n`);
+        sections.push(`## ${section.title}\n`);
         sections.push(...sectionTexts);
         processedSections.add(section.id);
       }
@@ -180,6 +181,58 @@ export default function Step4Panel() {
 
   const handleBack = () => {
     setCurrentStep('step3');
+  };
+
+  const handleDownloadMarkdown = () => {
+    // Используем generatedDocument, если он есть, иначе собираем из documentClauses
+    let documentText = generatedDocument;
+    
+    if (!documentText) {
+      // Собираем документ из clauses, если generatedDocument еще не собран
+      if (!skeleton) return;
+      
+      const sections: string[] = [];
+      skeleton.forEach((section) => {
+        const sectionTexts: string[] = [];
+        let hasItems = false;
+
+        section.items.forEach((item, index) => {
+          const itemKey = `${section.id}-${index}`;
+          if (selectedSkeletonItems.has(itemKey) && documentClauses[itemKey]) {
+            sectionTexts.push(documentClauses[itemKey]);
+            hasItems = true;
+          }
+        });
+
+        if (hasItems) {
+          sections.push(`## ${section.title}\n`);
+          sections.push(...sectionTexts);
+        }
+      });
+      
+      documentText = sections.join('\n\n');
+    }
+
+    if (!documentText || documentText.trim().length === 0) {
+      setError('Нет текста документа для скачивания');
+      return;
+    }
+
+    // Создаем Blob с текстом в формате Markdown
+    const blob = new Blob([documentText], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    
+    // Создаем временную ссылку для скачивания
+    const link = document.createElement('a');
+    link.href = url;
+    const fileName = `${documentType || 'document'}_${new Date().toISOString().split('T')[0]}.md`;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    
+    // Очищаем
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const currentItem = selectedItemsList[currentItemIndex];
@@ -269,16 +322,39 @@ export default function Step4Panel() {
 
           {generationComplete && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <p className="font-medium text-green-900">
-                ✓ Генерация документа завершена
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="font-medium text-green-900">
+                  ✓ Генерация документа завершена
+                </p>
+                <button
+                  onClick={handleDownloadMarkdown}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Скачать Markdown
+                </button>
+              </div>
             </div>
           )}
 
           {/* Отображение сгенерированных текстов */}
           {Object.keys(documentClauses).length > 0 && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-semibold mb-4">Сгенерированный текст документа</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold">Сгенерированный текст документа</h2>
+                <button
+                  onClick={handleDownloadMarkdown}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2"
+                  disabled={!generatedDocument && Object.keys(documentClauses).length === 0}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Скачать Markdown
+                </button>
+              </div>
               <div className="space-y-6">
                 {skeleton?.map((section) => {
                   const sectionItems = section.items

@@ -1,6 +1,6 @@
-import OpenAI from 'openai';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { getOpenAIClient } from './client';
+import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
+import { getModelConfig } from './models';
 import type { CompletionState, CompletionMessage } from '@/types/completion';
 import type { Question } from '@/types/question';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
@@ -11,46 +11,6 @@ export interface CompletionMessageResult {
   model?: string;
 }
 
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error('OPENAI_API_KEY is not set');
-}
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-/**
- * Читает промпт из файла и заменяет плейсхолдеры
- */
-function getPrompt(
-  state: CompletionState,
-  remainingRecommended: Question[]
-): string {
-  const promptPath = join(process.cwd(), 'prompts', 'completion-message.md');
-  let prompt: string;
-  
-  try {
-    prompt = readFileSync(promptPath, 'utf-8');
-  } catch (error) {
-    console.error('Error reading prompt file:', error);
-    throw new Error('Failed to read prompt file');
-  }
-
-  // Заменяем плейсхолдеры
-  prompt = prompt.replace('{{mustAnswered}}', state.mustAnswered.toString());
-  prompt = prompt.replace('{{mustTotal}}', state.mustTotal.toString());
-  prompt = prompt.replace('{{recommendedAnswered}}', state.recommendedAnswered.toString());
-  prompt = prompt.replace('{{recommendedTotal}}', state.recommendedTotal.toString());
-  prompt = prompt.replace('{{overallCoverage}}', Math.round(state.overallCoverage * 100).toString());
-  
-  const remainingQuestionsText = remainingRecommended
-    .map((q, idx) => `${idx + 1}. ${q.text} (${q.id})`)
-    .join('\n');
-  prompt = prompt.replace('{{remainingRecommended}}', remainingQuestionsText || 'Нет оставшихся вопросов');
-
-  return prompt;
-}
-
 /**
  * Генерирует мета-сообщение о готовности к генерации договора
  */
@@ -58,14 +18,28 @@ export async function generateCompletionMessage(
   state: CompletionState,
   remainingRecommended: Question[]
 ): Promise<CompletionMessageResult> {
-  const prompt = getPrompt(state, remainingRecommended);
-  const model = process.env.OPENAI_MODEL || 'gpt-5.1';
+  const client = getOpenAIClient();
+  
+  const remainingQuestionsText = remainingRecommended
+    .map((q, idx) => `${idx + 1}. ${q.text} (${q.id})`)
+    .join('\n');
+  
+  const prompt = await loadAndRenderPrompt('completion-message.md', {
+    mustAnswered: state.mustAnswered.toString(),
+    mustTotal: state.mustTotal.toString(),
+    recommendedAnswered: state.recommendedAnswered.toString(),
+    recommendedTotal: state.recommendedTotal.toString(),
+    overallCoverage: Math.round(state.overallCoverage * 100).toString(),
+    remainingRecommended: remainingQuestionsText || 'Нет оставшихся вопросов',
+  });
   
   const fullInput = `Ты - юридический ассистент. Сгенерируй мета-сообщение о готовности к генерации договора.\n\n${prompt}`;
 
   try {
-    const response = await openai.chat.completions.create({
-      model,
+    const modelConfig = getModelConfig('context_completion');
+    
+    const response = await client.chat.completions.create({
+      model: modelConfig.model,
       messages: [
         {
           role: 'system',
@@ -77,6 +51,11 @@ export async function generateCompletionMessage(
         },
       ],
       response_format: { type: 'json_object' },
+      ...(modelConfig.reasoning_effort && modelConfig.reasoning_effort !== 'none' && { 
+        reasoning_effort: modelConfig.reasoning_effort as 'low' | 'medium' | 'high' 
+      }),
+      ...(modelConfig.verbosity && { verbosity: modelConfig.verbosity }),
+      ...(modelConfig.service_tier && { service_tier: modelConfig.service_tier }),
     });
 
     const usage: TokenUsage | undefined = response.usage ? {
@@ -109,7 +88,7 @@ export async function generateCompletionMessage(
       return {
         message: parsed as CompletionMessage,
         usage,
-        model,
+        model: modelConfig.model,
       };
     }
 

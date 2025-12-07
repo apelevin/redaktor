@@ -45,6 +45,7 @@ export async function generateTerms(
         reasoning_effort: modelConfig.reasoning_effort as 'low' | 'medium' | 'high' 
       }),
       ...(modelConfig.verbosity && { verbosity: modelConfig.verbosity }),
+      ...(modelConfig.service_tier && { service_tier: modelConfig.service_tier }),
     });
     
     const content = response.choices[0]?.message?.content;

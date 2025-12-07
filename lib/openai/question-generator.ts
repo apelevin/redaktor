@@ -1,6 +1,6 @@
-import OpenAI from 'openai';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { getOpenAIClient } from './client';
+import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
+import { getModelConfig } from './models';
 import type { Question } from '@/types/question';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 
@@ -10,54 +10,28 @@ export interface QuestionGenerationResult {
   model?: string;
 }
 
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error('OPENAI_API_KEY is not set');
-}
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 /**
- * Читает промпт из файла и заменяет плейсхолдеры
- */
-function getPrompt(
-  documentType: string,
-  context: Record<string, any>,
-  answeredQuestionIds: string[]
-): string {
-  const promptPath = join(process.cwd(), 'prompts', 'question-generation.md');
-  let prompt: string;
-  
-  try {
-    prompt = readFileSync(promptPath, 'utf-8');
-  } catch (error) {
-    console.error('Error reading prompt file:', error);
-    throw new Error('Failed to read prompt file');
-  }
-
-  // Заменяем плейсхолдеры
-  prompt = prompt.replace('{{documentType}}', documentType);
-  prompt = prompt.replace('{{context}}', JSON.stringify(context, null, 2));
-  prompt = prompt.replace('{{answeredQuestionIds}}', JSON.stringify(answeredQuestionIds, null, 2));
-
-  return prompt;
-}
-
-/**
- * Генерирует следующий вопрос через OpenAI API (GPT-5.1)
+ * Генерирует следующий вопрос через OpenAI API
  */
 export async function generateNextQuestion(
   documentType: string,
   context: Record<string, any>,
   answeredQuestionIds: string[]
 ): Promise<QuestionGenerationResult> {
-  const prompt = getPrompt(documentType, context, answeredQuestionIds);
-  const model = process.env.OPENAI_MODEL || 'gpt-5.1';
+  const client = getOpenAIClient();
+  
+  const prompt = await loadAndRenderPrompt('question-generation.md', {
+    documentType,
+    context: JSON.stringify(context, null, 2),
+    answeredQuestionIds: JSON.stringify(answeredQuestionIds, null, 2),
+  });
 
   try {
-    const response = await openai.chat.completions.create({
-      model,
+    const modelConfig = getModelConfig('question_generation');
+    
+    const response = await client.chat.completions.create({
+      model: modelConfig.model,
       messages: [
         {
           role: 'system',
@@ -69,8 +43,11 @@ export async function generateNextQuestion(
         },
       ],
       response_format: { type: 'json_object' },
-      // Примечание: reasoning_effort и verbosity могут быть доступны в более новых версиях SDK
-      // Для GPT-5.1 эти параметры можно добавить, когда SDK будет обновлен
+      ...(modelConfig.reasoning_effort && modelConfig.reasoning_effort !== 'none' && { 
+        reasoning_effort: modelConfig.reasoning_effort as 'low' | 'medium' | 'high' 
+      }),
+      ...(modelConfig.verbosity && { verbosity: modelConfig.verbosity }),
+      ...(modelConfig.service_tier && { service_tier: modelConfig.service_tier }),
     });
 
     const usage: TokenUsage | undefined = response.usage ? {
@@ -85,7 +62,7 @@ export async function generateNextQuestion(
       return { 
         question: null,
         usage,
-        model,
+        model: modelConfig.model,
       };
     }
 
@@ -99,7 +76,7 @@ export async function generateNextQuestion(
       return { 
         question: null,
         usage,
-        model,
+        model: modelConfig.model,
       };
     }
 
@@ -108,7 +85,7 @@ export async function generateNextQuestion(
       return { 
         question: null,
         usage,
-        model,
+        model: modelConfig.model,
       };
     }
 
@@ -124,7 +101,7 @@ export async function generateNextQuestion(
       return {
         question: parsed as Question,
         usage,
-        model,
+        model: modelConfig.model,
       };
     }
 
@@ -132,7 +109,7 @@ export async function generateNextQuestion(
     return { 
       question: null,
       usage,
-      model,
+      model: modelConfig.model,
     };
   } catch (error) {
     console.error('Error generating question:', error);
