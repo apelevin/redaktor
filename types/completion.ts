@@ -24,3 +24,4 @@ export interface CompletionMessage {
   buttons: Array<{ id: string; label: string }>;
 }
 
+

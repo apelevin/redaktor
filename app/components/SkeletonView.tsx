@@ -38,3 +38,4 @@ export default function SkeletonView({ skeleton, onEdit }: SkeletonViewProps) {
   );
 }
 
+

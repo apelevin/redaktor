@@ -22,3 +22,4 @@ export async function getIndex(indexName: string) {
   return client.index(indexName);
 }
 
+

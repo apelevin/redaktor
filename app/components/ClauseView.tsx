@@ -51,3 +51,4 @@ export default function ClauseView({ clause, onEdit }: ClauseViewProps) {
   );
 }
 
+
