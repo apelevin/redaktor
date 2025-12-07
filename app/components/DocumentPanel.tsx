@@ -1,10 +1,9 @@
 'use client';
 
-import { useDocumentStore, useCanGenerateContract } from '@/lib/store/document-store';
+import { useDocumentStore } from '@/lib/store/document-store';
 
 export default function DocumentPanel() {
-  const { documentType, context, completionState, setCurrentStep } = useDocumentStore();
-  const canGenerateContract = useCanGenerateContract();
+  const { documentType, context, completionState } = useDocumentStore();
 
   return (
     <div className="h-full bg-white border-r border-gray-200 p-6 overflow-y-auto">
@@ -63,26 +62,6 @@ export default function DocumentPanel() {
               </pre>
             )}
           </div>
-
-          {canGenerateContract && (
-            <div className="pt-4 border-t border-gray-200 space-y-3">
-              <button
-                onClick={() => setCurrentStep('step2')}
-                className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
-              >
-                Шаг 2: Генерация контекста договора
-              </button>
-              <button
-                onClick={() => {
-                  // TODO: Реализовать генерацию договора
-                  alert('Генерация договора будет реализована позже');
-                }}
-                className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium"
-              >
-                Сформировать договор
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>

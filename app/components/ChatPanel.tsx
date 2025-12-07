@@ -8,7 +8,6 @@ import CompletionChoice from './CompletionChoice';
 import { mergeAnswerToContext } from '@/lib/utils/context-merge';
 import { calcCompletionState, decideNextStep, isQuestionAnswered } from '@/lib/utils/question-completion';
 import type { CompletionMessage } from '@/types/completion';
-import { useCanGenerateContract } from '@/lib/store/document-store';
 import CostDisplay from './CostDisplay';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 
@@ -38,8 +37,6 @@ export default function ChatPanel() {
     addCostRecord,
     setCurrentStep,
   } = useDocumentStore();
-
-  const canGenerateContract = useCanGenerateContract();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentQuestion, setCurrentQuestionState] = useState<Question | null>(null);
@@ -454,17 +451,12 @@ export default function ChatPanel() {
         </div>
       )}
 
-      {/* Кнопка перехода к шагу 2 - всегда видна, но активна только когда можно генерировать */}
+      {/* Кнопка перехода к шагу 2 - всегда видна и всегда активна */}
       {documentType && (
         <div className="p-4 border-t border-gray-200 bg-white">
           <button
             onClick={() => setCurrentStep('step2')}
-            disabled={!canGenerateContract || isLoading || !!currentQuestion}
-            className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
-              canGenerateContract && !isLoading && !currentQuestion
-                ? 'bg-green-600 text-white hover:bg-green-700'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
+            className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors"
           >
             Шаг 2: Генерация контекста договора →
           </button>
