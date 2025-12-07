@@ -27,6 +27,7 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
     skeleton,
     currentSkeletonItem,
     skeletonItemAnswers,
+    documentMode,
     setCurrentSkeletonItem,
     addSkeletonItemAnswer,
     addCostRecord,
@@ -127,6 +128,7 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
           item_text: item.itemText,
           item_index: item.itemIndex,
           existing_answers: skeletonItemAnswers,
+          document_mode: documentMode,
         }),
       });
 

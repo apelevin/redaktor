@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
       item_text,
       item_index,
       existing_answers,
+      document_mode,
     } = body;
 
     if (!document_type || !generated_context || !section_title || !section_id || item_text === undefined || item_index === undefined) {
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest) {
       item_text,
       item_index,
       existing_answers: existing_answers || {},
+      document_mode,
     });
 
     return NextResponse.json({

@@ -3,6 +3,7 @@ import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
 import { getModelConfig } from './models';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
+import type { DocumentMode } from '@/types/document-mode';
 
 export interface SkeletonGenerationParams {
   document_type: string;
@@ -10,6 +11,7 @@ export interface SkeletonGenerationParams {
   generatedContext?: string | null;
   jurisdiction?: string;
   style?: string;
+  document_mode?: DocumentMode;
 }
 
 export interface SkeletonGenerationResult {
@@ -36,6 +38,7 @@ export async function generateSkeleton(
     style: params.style ? `Стиль: ${params.style}` : '',
     context: contextText,
     has_generated_context: params.generatedContext ? 'true' : 'false',
+    document_mode: params.document_mode || 'short',
   });
   
   try {

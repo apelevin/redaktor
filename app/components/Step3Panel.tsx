@@ -4,6 +4,9 @@ import { useState, useMemo } from 'react';
 import { useDocumentStore } from '@/lib/store/document-store';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
+import type { DocumentMode } from '@/types/document-mode';
+import type { SkeletonItem } from '@/types/document';
+import { getDefaultSelectedItems } from '@/lib/utils/skeleton-item-selection';
 import CostDisplay from './CostDisplay';
 import SkeletonChatPanel from './SkeletonChatPanel';
 
@@ -15,9 +18,12 @@ export default function Step3Panel() {
     selectedSkeletonItems,
     skeletonConfirmed,
     currentSkeletonItem,
+    documentMode,
     confirmSkeleton,
     setCurrentStep,
     setSkeleton,
+    setDocumentMode,
+    setSelectedSkeletonItems,
     toggleSkeletonItem,
     selectAllSkeletonItems,
     deselectAllSkeletonItems,
@@ -50,6 +56,7 @@ export default function Step3Panel() {
         body: JSON.stringify({
           document_type: documentType,
           generated_context: generatedContext,
+          document_mode: documentMode,
         }),
       });
 
@@ -63,6 +70,9 @@ export default function Step3Panel() {
       // Сохраняем скелет в store
       if (data.skeleton && Array.isArray(data.skeleton)) {
         setSkeleton(data.skeleton);
+        // Автоматически выбираем пункты по умолчанию в зависимости от режима
+        const defaultSelected = getDefaultSelectedItems(data.skeleton, documentMode);
+        setSelectedSkeletonItems(defaultSelected);
       } else {
         throw new Error('Неверный формат ответа от сервера');
       }
@@ -91,6 +101,11 @@ export default function Step3Panel() {
     confirmSkeleton();
   };
 
+  // Получаем текст пункта, учитывая обратную совместимость
+  const getItemText = (item: SkeletonItem | string): string => {
+    return typeof item === 'string' ? item : item.text;
+  };
+
   // Получаем список выбранных пунктов с их информацией
   const selectedItemsList = useMemo(() => {
     if (!skeleton) return [];
@@ -105,7 +120,7 @@ export default function Step3Panel() {
             sectionId: section.id,
             itemIndex: index,
             sectionTitle: section.title,
-            itemText: item,
+            itemText: getItemText(item),
           });
         }
       });
@@ -162,7 +177,7 @@ export default function Step3Panel() {
                             <span className={`text-sm flex-1 ${
                               isCurrent ? 'font-semibold text-blue-900' : 'text-gray-700'
                             }`}>
-                              {item}
+                              {getItemText(item)}
                               {isCurrent && (
                                 <span className="ml-2 text-xs text-blue-600">← Текущий пункт</span>
                               )}
@@ -227,6 +242,29 @@ export default function Step3Panel() {
                 На основе сгенерированного описания договора будет создана полная структура документа
                 с разделами и пунктами, включая все стандартные разделы, необходимые для данного типа договора.
               </p>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Режим генерации документа:
+                </label>
+                <select
+                  value={documentMode}
+                  onChange={(e) => setDocumentMode(e.target.value as DocumentMode)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="short">Краткий</option>
+                  <option value="standard">Стандартный</option>
+                  <option value="extended">Расширенный</option>
+                  <option value="expert">Экспертный</option>
+                </select>
+                <p className="mt-2 text-xs text-gray-500">
+                  {documentMode === 'short' && 'Минимальный набор разделов и пунктов'}
+                  {documentMode === 'standard' && 'Типовой договор с полной структурой'}
+                  {documentMode === 'extended' && 'Дополнительные пункты для рисков и гарантий'}
+                  {documentMode === 'expert' && 'Максимально подробный каркас документа'}
+                </p>
+              </div>
+
               {error && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                   <p className="text-red-700">{error}</p>
@@ -328,7 +366,7 @@ export default function Step3Panel() {
                                   onChange={() => toggleSkeletonItem(section.id, index)}
                                   className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                                 />
-                                <span className="text-sm text-gray-700 flex-1">{item}</span>
+                                <span className="text-sm text-gray-700 flex-1">{getItemText(item)}</span>
                               </label>
                             );
                           })}

@@ -4,6 +4,7 @@ import type { CompletionState, NextStep } from '@/types/completion';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import { calculateCost } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
+import type { DocumentMode } from '@/types/document-mode';
 
 export interface CostRecord {
   id: string;
@@ -34,6 +35,8 @@ interface DocumentStore {
   generatedDocument: string | null; // Полный сгенерированный текст документа
   documentClauses: Record<string, string>; // Сгенерированные тексты по пунктам (ключ: sectionId-itemIndex)
   costRecords: CostRecord[];
+  documentMode: DocumentMode; // Режим генерации документа
+  outputTextMode: DocumentMode | null; // Режим генерации текста (null = использовать documentMode)
 
   // Actions
   setDocumentType: (type: string | null) => void;
@@ -49,12 +52,15 @@ interface DocumentStore {
   toggleSkeletonItem: (sectionId: string, itemIndex: number) => void;
   selectAllSkeletonItems: (sectionId?: string) => void;
   deselectAllSkeletonItems: (sectionId?: string) => void;
+  setSelectedSkeletonItems: (items: Set<string>) => void;
   confirmSkeleton: () => void;
   setCurrentSkeletonItem: (item: { sectionId: string; itemIndex: number } | null) => void;
   addSkeletonItemAnswer: (sectionId: string, itemIndex: number, answer: any) => void;
   setGeneratedDocument: (text: string | null) => void;
   addDocumentClause: (sectionId: string, itemIndex: number, text: string) => void;
   addCostRecord: (model: string, usage: TokenUsage, operation: string) => void;
+  setDocumentMode: (mode: DocumentMode) => void;
+  setOutputTextMode: (mode: DocumentMode | null) => void;
   reset: () => void;
   
 }
@@ -77,6 +83,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   generatedDocument: null,
   documentClauses: {},
   costRecords: [],
+  documentMode: 'short',
+  outputTextMode: null,
 
   setDocumentType: (type) => set({ 
     documentType: type, 
@@ -96,6 +104,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     generatedDocument: null,
     documentClauses: {},
     costRecords: [], // Сбрасываем затраты при новом документе
+    documentMode: 'short',
+    outputTextMode: null,
   }),
 
   addAnswer: (answer) => set((state) => ({
@@ -183,6 +193,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     });
   },
 
+  setSelectedSkeletonItems: (items) => set({ selectedSkeletonItems: items }),
+
   confirmSkeleton: () => set({ skeletonConfirmed: true }),
 
   setCurrentSkeletonItem: (item) => set({ currentSkeletonItem: item }),
@@ -218,6 +230,10 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     }));
   },
 
+  setDocumentMode: (mode) => set({ documentMode: mode }),
+
+  setOutputTextMode: (mode) => set({ outputTextMode: mode }),
+
   reset: () => set({
     documentType: null,
     context: {},
@@ -236,6 +252,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     generatedDocument: null,
     documentClauses: {},
     costRecords: [],
+    documentMode: 'short',
+    outputTextMode: null,
   }),
 }));
 

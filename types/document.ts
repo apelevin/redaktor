@@ -3,10 +3,17 @@ export interface QAContext {
   answer: string;
 }
 
+import type { ItemImportance } from './document-mode';
+
+export interface SkeletonItem {
+  text: string;
+  importance?: ItemImportance;
+}
+
 export interface Section {
   id: string;
   title: string;
-  items: string[];
+  items: SkeletonItem[] | string[]; // Поддержка обратной совместимости: string[] или новый формат с importance
 }
 
 export interface Clause {

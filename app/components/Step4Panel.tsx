@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useDocumentStore } from '@/lib/store/document-store';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
+import type { DocumentMode } from '@/types/document-mode';
+import type { SkeletonItem } from '@/types/document';
 import CostDisplay from './CostDisplay';
 
 export default function Step4Panel() {
@@ -14,7 +16,10 @@ export default function Step4Panel() {
     selectedSkeletonItems,
     skeletonItemAnswers,
     documentClauses,
+    documentMode,
+    outputTextMode,
     setCurrentStep,
+    setOutputTextMode,
     addDocumentClause,
     setGeneratedDocument,
     addCostRecord,
@@ -24,6 +29,11 @@ export default function Step4Panel() {
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [generationComplete, setGenerationComplete] = useState(false);
+
+  // Получаем текст пункта, учитывая обратную совместимость
+  const getItemText = (item: SkeletonItem | string): string => {
+    return typeof item === 'string' ? item : item.text;
+  };
 
   // Получаем список выбранных пунктов с их информацией
   const selectedItemsList = useMemo(() => {
@@ -39,7 +49,7 @@ export default function Step4Panel() {
             sectionId: section.id,
             itemIndex: index,
             sectionTitle: section.title,
-            itemText: item,
+            itemText: getItemText(item),
           });
         }
       });
@@ -105,6 +115,7 @@ export default function Step4Panel() {
           item_index: item.itemIndex,
           item_answers: skeletonItemAnswers[itemKey] || null,
           existing_clauses: documentClauses,
+          document_mode: outputTextMode || documentMode,
         }),
       });
 
@@ -205,6 +216,30 @@ export default function Step4Panel() {
                 <span className="text-gray-900">{selectedItemsList.length}</span>
               </div>
             </div>
+            
+            {!isGenerating && !generationComplete && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Режим генерации текста:
+                </label>
+                <select
+                  value={outputTextMode || documentMode}
+                  onChange={(e) => setOutputTextMode(e.target.value as DocumentMode)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="short">Краткий</option>
+                  <option value="standard">Стандартный</option>
+                  <option value="extended">Расширенный</option>
+                  <option value="expert">Экспертный</option>
+                </select>
+                <p className="mt-2 text-xs text-gray-500">
+                  {outputTextMode || documentMode === 'short' && '1 абзац или 3-6 предложений, кратко и ёмко'}
+                  {(outputTextMode || documentMode) === 'standard' && '1-2 абзаца, обычная детализация'}
+                  {(outputTextMode || documentMode) === 'extended' && '2-3 абзаца, подробное описание'}
+                  {(outputTextMode || documentMode) === 'expert' && '3+ абзаца, максимальная детализация'}
+                </p>
+              </div>
+            )}
           </div>
 
           {error && (
@@ -248,7 +283,7 @@ export default function Step4Panel() {
                     .map((item, index) => {
                       const itemKey = `${section.id}-${index}`;
                       if (selectedSkeletonItems.has(itemKey) && documentClauses[itemKey]) {
-                        return { item, text: documentClauses[itemKey] };
+                        return { item: getItemText(item), text: documentClauses[itemKey] };
                       }
                       return null;
                     })

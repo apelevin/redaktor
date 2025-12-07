@@ -4,7 +4,7 @@ import { generateSkeleton } from '@/lib/openai/skeleton-generator';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { document_type, qa_context, generated_context, jurisdiction, style } = body;
+    const { document_type, qa_context, generated_context, jurisdiction, style, document_mode } = body;
     
     if (!document_type) {
       return NextResponse.json(
@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
       generatedContext: finalGeneratedContext,
       jurisdiction,
       style,
+      document_mode,
     });
     
     return NextResponse.json({ 

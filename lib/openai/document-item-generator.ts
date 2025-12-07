@@ -2,6 +2,7 @@ import { getOpenAIClient } from './client';
 import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
 import { getModelConfig } from './models';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
+import type { DocumentMode } from '@/types/document-mode';
 
 export interface DocumentItemGenerationParams {
   document_type: string;
@@ -14,6 +15,7 @@ export interface DocumentItemGenerationParams {
   existing_clauses: Record<string, string>; // Уже сгенерированные тексты
   jurisdiction?: string;
   style?: string;
+  document_mode?: DocumentMode;
 }
 
 export interface DocumentItemGenerationResult {
@@ -53,6 +55,7 @@ export async function generateDocumentItem(
     item_text: params.item_text,
     item_answers: itemAnswersText,
     existing_clauses: existingClausesText,
+    document_mode: params.document_mode || 'short',
   });
   
   try {

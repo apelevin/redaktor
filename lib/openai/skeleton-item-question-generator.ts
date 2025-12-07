@@ -3,6 +3,7 @@ import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
 import { getModelConfig } from './models';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { Question } from '@/types/question';
+import type { DocumentMode } from '@/types/document-mode';
 
 export interface SkeletonItemQuestionParams {
   document_type: string;
@@ -12,6 +13,7 @@ export interface SkeletonItemQuestionParams {
   item_text: string;
   item_index: number;
   existing_answers: Record<string, any>;
+  document_mode?: DocumentMode;
 }
 
 export interface SkeletonItemQuestionResult {
@@ -48,6 +50,7 @@ export async function generateSkeletonItemQuestion(
     section_title: params.section_title,
     item_text: params.item_text,
     existing_answers: existingAnswersText,
+    document_mode: params.document_mode || 'short',
   });
   
   try {
