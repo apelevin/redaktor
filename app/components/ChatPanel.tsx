@@ -36,6 +36,7 @@ export default function ChatPanel() {
     setCompletionState,
     setNextStep,
     addCostRecord,
+    setCurrentStep,
   } = useDocumentStore();
 
   const canGenerateContract = useCanGenerateContract();
@@ -450,6 +451,23 @@ export default function ChatPanel() {
             question={currentQuestion}
             onSubmit={handleAnswerSubmit}
           />
+        </div>
+      )}
+
+      {/* Кнопка перехода к шагу 2 - всегда видна, но активна только когда можно генерировать */}
+      {documentType && (
+        <div className="p-4 border-t border-gray-200 bg-white">
+          <button
+            onClick={() => setCurrentStep('step2')}
+            disabled={!canGenerateContract || isLoading || !!currentQuestion}
+            className={`w-full px-6 py-3 rounded-lg font-medium transition-colors ${
+              canGenerateContract && !isLoading && !currentQuestion
+                ? 'bg-green-600 text-white hover:bg-green-700'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            Шаг 2: Генерация контекста договора →
+          </button>
         </div>
       )}
     </div>
