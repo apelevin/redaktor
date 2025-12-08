@@ -10,6 +10,7 @@ import { calcCompletionState, decideNextStep, isQuestionAnswered } from '@/lib/u
 import type { CompletionMessage } from '@/types/completion';
 import CostDisplay from './CostDisplay';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
+import type { DocumentMode } from '@/types/document-mode';
 
 interface ChatMessage {
   id: string;
@@ -36,12 +37,14 @@ export default function ChatPanel() {
     setNextStep,
     addCostRecord,
     setCurrentStep,
+    setDocumentMode,
   } = useDocumentStore();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentQuestion, setCurrentQuestionState] = useState<Question | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [newDocumentType, setNewDocumentType] = useState('');
+  const [newDocumentMode, setNewDocumentMode] = useState<DocumentMode>('short');
   const [completionMessage, setCompletionMessage] = useState<CompletionMessage | null>(null);
 
   const addMessage = (type: ChatMessage['type'], content: string | Question) => {
@@ -60,6 +63,7 @@ export default function ChatPanel() {
     if (!type.trim()) return;
 
     setDocumentType(type);
+    setDocumentMode(newDocumentMode);
     setMessages([]);
     setCurrentQuestionState(null);
     setIsLoading(true);
@@ -361,7 +365,7 @@ export default function ChatPanel() {
         </div>
         
         {!documentType ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <input
               type="text"
               value={newDocumentType}
@@ -369,6 +373,19 @@ export default function ChatPanel() {
               placeholder="Введите тип документа (например: service_contract)"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700">Режим:</label>
+              <select
+                value={newDocumentMode}
+                onChange={(e) => setNewDocumentMode(e.target.value as DocumentMode)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                <option value="short">Краткий</option>
+                <option value="standard">Стандартный</option>
+                <option value="extended">Расширенный</option>
+                <option value="expert">Экспертный</option>
+              </select>
+            </div>
             <button
               onClick={() => startNewDocument(newDocumentType)}
               disabled={!newDocumentType.trim() || isLoading}

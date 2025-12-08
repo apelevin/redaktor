@@ -28,6 +28,7 @@ export default function Step2Panel() {
     setInstructionMatch,
     setSkeleton,
     setSelectedSkeletonItems,
+    documentMode,
   } = useDocumentStore();
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -157,6 +158,9 @@ export default function Step2Panel() {
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-bold">Шаг 2: Генерация контекста договора</h1>
           <div className="flex items-center gap-4">
+            <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">
+              Режим: {documentMode}
+            </span>
             <CostDisplay />
             <button
               onClick={handleBack}

@@ -4,7 +4,6 @@ import { useEffect, useState, useMemo } from 'react';
 import { useDocumentStore } from '@/lib/store/document-store';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
-import type { DocumentMode } from '@/types/document-mode';
 import type { SkeletonItem } from '@/types/document';
 import { getDefaultSelectedItems } from '@/lib/utils/skeleton-item-selection';
 import { TH_INSTRUCTION_STRONG } from '@/lib/pinecone/constants';
@@ -24,7 +23,6 @@ export default function Step3Panel() {
     confirmSkeleton,
     setCurrentStep,
     setSkeleton,
-    setDocumentMode,
     setSelectedSkeletonItems,
     setTerms,
     toggleSkeletonItem,
@@ -308,33 +306,12 @@ export default function Step3Panel() {
 
           {!skeleton && (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-              <h2 className="text-xl font-semibold mb-4">Генерация структуры документа</h2>
+              <h2 className="text-xl font-semibold mb-2">Генерация структуры документа</h2>
+              <p className="text-sm text-gray-600 mb-2">Режим: {documentMode}</p>
               <p className="text-gray-600 mb-4">
                 На основе сгенерированного описания договора будет создана полная структура документа
                 с разделами и пунктами, включая все стандартные разделы, необходимые для данного типа договора.
               </p>
-              
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Режим генерации документа:
-                </label>
-                <select
-                  value={documentMode}
-                  onChange={(e) => setDocumentMode(e.target.value as DocumentMode)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="short">Краткий</option>
-                  <option value="standard">Стандартный</option>
-                  <option value="extended">Расширенный</option>
-                  <option value="expert">Экспертный</option>
-                </select>
-                <p className="mt-2 text-xs text-gray-500">
-                  {documentMode === 'short' && 'Минимальный набор разделов и пунктов'}
-                  {documentMode === 'standard' && 'Типовой договор с полной структурой'}
-                  {documentMode === 'extended' && 'Дополнительные пункты для рисков и гарантий'}
-                  {documentMode === 'expert' && 'Максимально подробный каркас документа'}
-                </p>
-              </div>
 
               {error && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
