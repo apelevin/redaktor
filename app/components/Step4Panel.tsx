@@ -7,6 +7,7 @@ import type { Section } from '@/types/document';
 import type { DocumentMode } from '@/types/document-mode';
 import type { SkeletonItem } from '@/types/document';
 import CostDisplay from './CostDisplay';
+import InstructionView from './InstructionView';
 
 export default function Step4Panel() {
   const {
@@ -20,17 +21,24 @@ export default function Step4Panel() {
     documentMode,
     outputTextMode,
     terms,
+    instruction,
+    jurisdiction,
+    questions,
     setCurrentStep,
     setOutputTextMode,
     addDocumentClause,
     setGeneratedDocument,
     addCostRecord,
+    setInstruction,
   } = useDocumentStore();
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [generationComplete, setGenerationComplete] = useState(false);
+  const [activeTab, setActiveTab] = useState<'document' | 'instruction'>('document');
+  const [isGeneratingInstruction, setIsGeneratingInstruction] = useState(false);
+  const [instructionError, setInstructionError] = useState<string | null>(null);
 
   // Получаем текст пункта, учитывая обратную совместимость
   const getItemText = (item: SkeletonItem | string): string => {
@@ -183,6 +191,58 @@ export default function Step4Panel() {
     setCurrentStep('step3');
   };
 
+  const handleGenerateInstruction = async () => {
+    if (!documentType || !skeleton) {
+      setInstructionError('Недостаточно данных для генерации инструкции');
+      return;
+    }
+
+    setIsGeneratingInstruction(true);
+    setInstructionError(null);
+
+    try {
+      const response = await fetch('/api/instruction/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          documentType,
+          generatedDocument,
+          documentClauses,
+          skeleton,
+          questions: questions || [],
+          skeletonItemAnswers,
+          terms,
+          generatedContext,
+          jurisdiction: jurisdiction || 'RU',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Ошибка при генерации инструкции');
+      }
+
+      const data = await response.json();
+
+      // Сохраняем инструкцию в store
+      if (data.instruction) {
+        setInstruction(data.instruction);
+      }
+
+      // Отслеживаем затраты
+      if (data.usage && data.model) {
+        addCostRecord(data.model, data.usage as TokenUsage, 'instruction_generation');
+      }
+    } catch (err) {
+      console.error('Error generating instruction:', err);
+      setInstructionError(err instanceof Error ? err.message : 'Неизвестная ошибка');
+    } finally {
+      setIsGeneratingInstruction(false);
+    }
+  };
+
   const handleDownloadMarkdown = () => {
     // Используем generatedDocument, если он есть, иначе собираем из documentClauses
     let documentText = generatedDocument;
@@ -255,10 +315,76 @@ export default function Step4Panel() {
             </button>
           </div>
         </div>
+        
+        {/* Вкладки */}
+        {generationComplete && (
+          <div className="flex gap-2 border-b border-gray-200">
+            <button
+              onClick={() => setActiveTab('document')}
+              className={`px-4 py-2 font-medium transition-colors ${
+                activeTab === 'document'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Документ
+            </button>
+            <button
+              onClick={() => setActiveTab('instruction')}
+              className={`px-4 py-2 font-medium transition-colors ${
+                activeTab === 'instruction'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Инструкция
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
+          {/* Контент вкладки "Инструкция" */}
+          {activeTab === 'instruction' && generationComplete && (
+            <div>
+              {instruction ? (
+                <InstructionView instruction={instruction} />
+              ) : (
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                  <h2 className="text-xl font-semibold mb-4">Инструкция по документу</h2>
+                  <p className="text-gray-600 mb-4">
+                    Инструкция поможет понять структуру и требования к документам этого типа для будущего использования.
+                  </p>
+                  
+                  {instructionError && (
+                    <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-red-700">{instructionError}</p>
+                    </div>
+                  )}
+                  
+                  <button
+                    onClick={handleGenerateInstruction}
+                    disabled={isGeneratingInstruction}
+                    className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isGeneratingInstruction ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                        <span>Генерация инструкции...</span>
+                      </>
+                    ) : (
+                      <span>Сгенерировать инструкцию</span>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Контент вкладки "Документ" */}
+          {activeTab === 'document' && (
+            <>
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h2 className="text-xl font-semibold mb-4">Информация о документе</h2>
             <div className="space-y-2">
@@ -385,6 +511,8 @@ export default function Step4Panel() {
                 })}
               </div>
             </div>
+          )}
+            </>
           )}
         </div>
       </div>

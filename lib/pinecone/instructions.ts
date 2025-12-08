@@ -171,3 +171,62 @@ export async function upsertInstruction(
   }
 }
 
+/**
+ * Сохраняет инструкцию нового формата в Pinecone
+ * Формат инструкции согласно v2 self learning approach
+ */
+export async function saveInstructionToPinecone(
+  instruction: Instruction
+): Promise<{ id: string }> {
+  try {
+    const index = await getIndex(INSTRUCTIONS_INDEX);
+    
+    // Генерируем UUID для id (формат: inst_...)
+    const instruction_id = `inst_${randomUUID()}`;
+    
+    // Формируем текст для embedding согласно спецификации:
+    // "{documentType}. {jurisdiction}. {whenToUse}. {structureTitles}"
+    const structureTitles = instruction.recommendedStructure
+      .map(s => s.title)
+      .join(', ');
+    
+    const embeddingText = `${instruction.documentType}. ${instruction.jurisdiction}. ${instruction.whenToUse}. ${structureTitles}`;
+    
+    // Создаем эмбеддинг
+    const vector = await createEmbedding(embeddingText);
+    
+    // Формируем метаданные - сохраняем полный JSON инструкции
+    const metadata: any = {
+      documentType: instruction.documentType,
+      jurisdiction: instruction.jurisdiction,
+      whenToUse: instruction.whenToUse,
+      requiredUserInputs: instruction.requiredUserInputs,
+      recommendedStructure: instruction.recommendedStructure,
+      styleHints: instruction.styleHints,
+      placeholdersUsed: instruction.placeholdersUsed,
+      instructionQuality: instruction.instructionQuality,
+      createdAt: new Date().toISOString(),
+      isSavedToKnowledgeBase: true,
+      approved: true, // Новые инструкции по умолчанию approved
+      version: 1,
+      usage_count: 0,
+    };
+    
+    // Upsert в Pinecone
+    await index.upsert([
+      {
+        id: instruction_id,
+        values: vector,
+        metadata,
+      },
+    ]);
+    
+    return {
+      id: instruction_id,
+    };
+  } catch (error) {
+    console.error('Error saving instruction to Pinecone:', error);
+    throw error;
+  }
+}
+

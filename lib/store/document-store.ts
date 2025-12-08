@@ -6,6 +6,7 @@ import { calculateCost } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
 import type { DocumentMode } from '@/types/document-mode';
 import type { TermsDictionary } from '@/types/terms';
+import type { Instruction } from '@/types/instruction';
 
 export interface CostRecord {
   id: string;
@@ -39,6 +40,8 @@ interface DocumentStore {
   documentMode: DocumentMode; // Режим генерации документа
   outputTextMode: DocumentMode | null; // Режим генерации текста (null = использовать documentMode)
   terms: TermsDictionary | null; // Словарь терминов договора
+  instruction: Instruction | null; // Сгенерированная инструкция
+  jurisdiction: string | null; // Юрисдикция документа (по умолчанию "RU")
 
   // Actions
   setDocumentType: (type: string | null) => void;
@@ -64,6 +67,8 @@ interface DocumentStore {
   setDocumentMode: (mode: DocumentMode) => void;
   setOutputTextMode: (mode: DocumentMode | null) => void;
   setTerms: (terms: TermsDictionary | null) => void;
+  setInstruction: (instruction: Instruction | null) => void;
+  setJurisdiction: (jurisdiction: string | null) => void;
   reset: () => void;
   
 }
@@ -89,6 +94,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   documentMode: 'short',
   outputTextMode: null,
   terms: null,
+  instruction: null,
+  jurisdiction: 'RU',
 
   setDocumentType: (type) => set({ 
     documentType: type, 
@@ -111,6 +118,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     documentMode: 'short',
     outputTextMode: null,
     terms: null,
+    instruction: null,
+    jurisdiction: 'RU',
   }),
 
   addAnswer: (answer) => set((state) => ({
@@ -241,6 +250,10 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
 
   setTerms: (terms) => set({ terms }),
 
+  setInstruction: (instruction) => set({ instruction }),
+
+  setJurisdiction: (jurisdiction) => set({ jurisdiction: jurisdiction || 'RU' }),
+
   reset: () => set({
     documentType: null,
     context: {},
@@ -262,6 +275,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     documentMode: 'short',
     outputTextMode: null,
     terms: null,
+    instruction: null,
+    jurisdiction: 'RU',
   }),
 }));
 
