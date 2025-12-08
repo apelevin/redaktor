@@ -51,3 +51,23 @@ export interface InstructionGenerationResult {
   model?: string;
 }
 
+/**
+ * Метаданные инструкции для хранения в Pinecone
+ * Содержит только плоские поля (string/number), сложные объекты хранятся как JSON-строки
+ */
+export interface PineconeInstructionMetadata {
+  // Ключевые поля для фильтров и быстрых просмотров
+  documentType: string;          // человекочитаемое имя типа документа
+  jurisdiction: string;          // "RU"
+  language: string;              // "ru"
+  
+  whenToUse: string;             // короткое описание (дублирует Instruction.whenToUse)
+  instructionQuality: string;    // "high" | "medium" | "low"
+  version: number;               // версия инструкции
+  usage_count: number;           // сколько раз инструкция уже использовалась
+  createdAt: string;             // ISO-строка даты
+  
+  // Вся полная инструкция в виде JSON-строки
+  fullInstruction: string;       // JSON.stringify(Instruction)
+}
+

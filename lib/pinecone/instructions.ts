@@ -3,11 +3,28 @@ import { getIndex } from './client';
 import { createEmbedding } from '@/lib/openai/embeddings';
 import { INSTRUCTION_THRESHOLD } from './constants';
 import type { InstructionResult, Section, InstructionMetadata } from '@/types/document';
+import type { Instruction, PineconeInstructionMetadata } from '@/types/instruction';
 
 const INSTRUCTIONS_INDEX = process.env.PINECONE_INSTRUCTIONS_INDEX || 'instructions';
 
 /**
- * Формирует текст для эмбеддинга инструкции согласно схеме из концепции
+ * Формирует текст для эмбеддинга инструкции нового формата
+ * Согласно спецификации из instjsondetails.md
+ */
+export function buildInstructionEmbeddingText(instruction: Instruction): string {
+  // Собираем заголовки всех разделов
+  const sectionTitles = instruction.recommendedStructure
+    .map(s => s.title)
+    .join('; ');
+  
+  // Формируем текст согласно формату:
+  // "Тип документа: {documentType}. Юрисдикция: {jurisdiction}. Когда использовать: {whenToUse}. Разделы: {section1.title}; {section2.title}; ..."
+  return `Тип документа: ${instruction.documentType}.\nЮрисдикция: ${instruction.jurisdiction}.\nКогда использовать: ${instruction.whenToUse}.\nРазделы: ${sectionTitles}.`;
+}
+
+/**
+ * Формирует текст для эмбеддинга инструкции согласно схеме из концепции (старый формат)
+ * @deprecated Используйте buildInstructionEmbeddingText для нового формата
  */
 function formatInstructionText(
   document_type: string,
@@ -83,6 +100,31 @@ export async function searchInstructions(
       if (score >= INSTRUCTION_THRESHOLD) {
         const metadata = match.metadata;
         
+        // Проверяем, есть ли новый формат с fullInstruction
+        if (metadata?.fullInstruction && typeof metadata.fullInstruction === 'string') {
+          try {
+            // Используем новую функцию для десериализации
+            const mappedResult = mapPineconeMatchToInstruction(match);
+            // Возвращаем в старом формате для обратной совместимости
+            // Можно расширить InstructionResult в будущем, чтобы возвращать полный объект Instruction
+            const instruction = mappedResult.instruction;
+            return {
+              instruction_found: true,
+              skeleton: instruction.recommendedStructure.map(s => ({
+                id: s.sectionKey,
+                title: s.title,
+                items: [s.description], // Преобразуем в старый формат
+              })) as Section[],
+              questions: instruction.requiredUserInputs,
+              related_norms: [], // Можно добавить в будущем
+            };
+          } catch (parseError) {
+            console.error('Error parsing new format instruction, falling back to old format:', parseError);
+            // Продолжаем с обработкой старого формата ниже
+          }
+        }
+        
+        // Старый формат (обратная совместимость)
         return {
           instruction_found: true,
           skeleton: metadata?.skeleton as Section[],
@@ -176,11 +218,13 @@ export async function upsertInstruction(
  * Формат инструкции согласно v2 self learning approach
  */
 export async function saveInstructionToPinecone(
-  instruction: Instruction
+  instruction: Instruction,
+  options?: {
+    id?: string;
+    version?: number;
+  }
 ): Promise<{ id: string }> {
   try {
-    console.log('Starting saveInstructionToPinecone...');
-    
     // Валидация обязательных полей
     if (!instruction.documentType) {
       throw new Error('instruction.documentType is required');
@@ -195,28 +239,17 @@ export async function saveInstructionToPinecone(
       throw new Error('instruction.recommendedStructure must be an array');
     }
     
-    console.log('Instruction documentType:', instruction.documentType);
-    
     const index = await getIndex(INSTRUCTIONS_INDEX);
-    console.log('Got Pinecone index:', INSTRUCTIONS_INDEX);
     
-    // Генерируем UUID для id (формат: inst_...)
-    const instruction_id = `inst_${randomUUID()}`;
-    console.log('Generated instruction_id:', instruction_id);
+    // Определяем id (использовать переданный или сгенерировать UUID)
+    const instruction_id = options?.id || `inst_${randomUUID()}`;
+    const version = options?.version ?? 1;
     
-    // Формируем текст для embedding согласно спецификации:
-    // "{documentType}. {jurisdiction}. {whenToUse}. {structureTitles}"
-    const structureTitles = instruction.recommendedStructure
-      .map(s => s.title)
-      .join(', ');
-    
-    const embeddingText = `${instruction.documentType}. ${instruction.jurisdiction}. ${instruction.whenToUse}. ${structureTitles}`;
-    console.log('Created embedding text, length:', embeddingText.length);
+    // Формируем текст для embedding используя отдельную функцию
+    const embeddingText = buildInstructionEmbeddingText(instruction);
     
     // Создаем эмбеддинг
-    console.log('Creating embedding...');
     const vector = await createEmbedding(embeddingText);
-    console.log('Embedding created, vector length:', vector.length);
     
     // Формируем метаданные - сериализуем сложные объекты в JSON строки
     // Pinecone не поддерживает вложенные объекты и массивы объектов в метаданных
@@ -229,32 +262,27 @@ export async function saveInstructionToPinecone(
       console.warn(`Instruction metadata size is large: ${metadataSize} bytes`);
     }
     
-    const metadata: any = {
+    // Собираем PineconeInstructionMetadata согласно спецификации
+    const metadata: PineconeInstructionMetadata = {
       documentType: instruction.documentType,
       jurisdiction: instruction.jurisdiction,
-      whenToUse: instruction.whenToUse.substring(0, 500), // Ограничиваем длину для поиска
+      language: 'ru', // Пока фиксировано
+      whenToUse: instruction.whenToUse,
       instructionQuality: instruction.instructionQuality,
+      version: version,
+      usage_count: 0, // На момент создания
       createdAt: new Date().toISOString(),
-      version: 1,
-      usage_count: 0,
-      // Сохраняем полную инструкцию как JSON для возможности восстановления
       fullInstruction: fullInstructionJson,
     };
     
     // Upsert в Pinecone
-    console.log('Upserting to Pinecone...');
-    console.log('Metadata keys:', Object.keys(metadata));
-    console.log('Metadata size (fullInstruction):', Buffer.byteLength(metadata.fullInstruction || '', 'utf8'), 'bytes');
-    
     await index.upsert([
       {
         id: instruction_id,
         values: vector,
-        metadata,
+        metadata: metadata as any, // Pinecone metadata type может требовать any
       },
     ]);
-    
-    console.log('Successfully saved instruction to Pinecone:', instruction_id);
     
     return {
       id: instruction_id,
@@ -263,7 +291,41 @@ export async function saveInstructionToPinecone(
     console.error('Error saving instruction to Pinecone:', error);
     if (error instanceof Error) {
       console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error stack:', error.stack);
+      }
+    }
+    throw error;
+  }
+}
+
+/**
+ * Преобразует результат поиска из Pinecone в объект Instruction
+ * Десериализует полную инструкцию из metadata.fullInstruction
+ */
+export function mapPineconeMatchToInstruction(match: {
+  id: string;
+  score?: number;
+  metadata?: Record<string, any>;
+}): { id: string; score?: number; instruction: Instruction } {
+  try {
+    // Проверяем, что metadata.fullInstruction есть и является строкой
+    if (!match.metadata?.fullInstruction || typeof match.metadata.fullInstruction !== 'string') {
+      throw new Error(`Missing or invalid fullInstruction in metadata for id: ${match.id}`);
+    }
+    
+    // Парсим полную инструкцию из JSON-строки
+    const instruction: Instruction = JSON.parse(match.metadata.fullInstruction);
+    
+    return {
+      id: match.id,
+      score: match.score,
+      instruction,
+    };
+  } catch (error) {
+    console.error('Error parsing instruction from Pinecone match:', error);
+    if (error instanceof Error) {
+      throw new Error(`Failed to parse instruction from Pinecone: ${error.message}`);
     }
     throw error;
   }
