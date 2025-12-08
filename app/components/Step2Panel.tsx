@@ -248,6 +248,11 @@ export default function Step2Panel() {
                         <div className="space-y-1">
                           <div className="text-sm text-gray-500">ID: {cand.id}</div>
                           <div className="text-base font-medium text-gray-900">Score: {cand.score.toFixed(3)}</div>
+                          {cand.instruction?.whenToUse && (
+                            <div className="text-sm text-gray-700">
+                              Когда использовать: {cand.instruction.whenToUse}
+                            </div>
+                          )}
                         </div>
                         <div className="flex gap-2">
                           <button
