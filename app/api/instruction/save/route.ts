@@ -26,8 +26,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Требуем указание режима документа при сохранении
+    if (!instruction.documentMode) {
+      return NextResponse.json(
+        { error: 'documentMode is required when saving instruction' },
+        { status: 400 }
+      );
+    }
+
     // Сохранение инструкции в Pinecone
-    const saveResult = await saveInstructionToPinecone(instruction);
+    const saveResult = await saveInstructionToPinecone(instruction, { documentMode: instruction.documentMode });
 
     return NextResponse.json({
       id: saveResult.id,

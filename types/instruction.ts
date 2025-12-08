@@ -1,3 +1,5 @@
+import type { DocumentMode } from '@/types/document-mode';
+
 /**
  * Универсальная инструкция для генерации документов
  * Создается из готового документа через LLM с анонимизацией
@@ -11,6 +13,7 @@ export interface Instruction {
   styleHints: StyleHints;
   placeholdersUsed: string[]; // Список всех плейсхолдеров, найденных во входе
   instructionQuality: 'high' | 'medium' | 'low'; // Оценка качества инструкции
+  documentMode?: DocumentMode; // Режим, в котором была создана инструкция
 }
 
 export interface InstructionSection {
@@ -60,6 +63,7 @@ export interface PineconeInstructionMetadata {
   documentType: string;          // человекочитаемое имя типа документа
   jurisdiction: string;          // "RU"
   language: string;              // "ru"
+  documentMode: 'short' | 'standard' | 'extended' | 'expert'; // Режим, в котором создана инструкция
   
   whenToUse: string;             // короткое описание (дублирует Instruction.whenToUse)
   instructionQuality: string;    // "high" | "medium" | "low"

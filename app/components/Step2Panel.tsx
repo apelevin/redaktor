@@ -110,6 +110,7 @@ export default function Step2Panel() {
           documentType,
           jurisdiction: jurisdiction || 'RU',
           shortDescription: generatedContext || '',
+          documentMode,
         }),
       });
       if (!resp.ok) {
@@ -143,7 +144,7 @@ export default function Step2Panel() {
       items: [{ text: sec.description, importance: sec.isMandatory ? 'must' : 'recommended' }],
     }));
     setSkeleton(skel);
-    setSelectedSkeletonItems(getDefaultSelectedItems(skel, 'short')); // по умолчанию краткий
+    setSelectedSkeletonItems(getDefaultSelectedItems(skel, documentMode || 'short'));
     setCurrentStep('step3');
   };
 

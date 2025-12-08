@@ -232,7 +232,10 @@ export default function Step4Panel() {
 
       // Сохраняем инструкцию в store
       if (data.instruction) {
-        setInstruction(data.instruction);
+        setInstruction({
+          ...data.instruction,
+          documentMode,
+        });
       }
 
       // Отслеживаем затраты
@@ -263,7 +266,10 @@ export default function Step4Panel() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          instruction,
+          instruction: {
+            ...instruction,
+            documentMode,
+          },
         }),
       });
 

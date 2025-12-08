@@ -76,6 +76,7 @@ export async function findInstructionCandidates(params: {
   jurisdiction?: string;
   shortDescription?: string;
   topK?: number;
+  documentMode?: string;
 }): Promise<InstructionMatch[]> {
   const results: InstructionMatch[] = [];
   try {
@@ -88,6 +89,9 @@ export async function findInstructionCandidates(params: {
     });
     const queryVector = await createEmbedding(queryText);
     const filter: any = { jurisdiction: { $eq: jurisdiction } };
+    if (params.documentMode) {
+      filter.documentMode = { $eq: params.documentMode };
+    }
     let response = await index.query({
       vector: queryVector,
       topK: params.topK ?? 5,
@@ -95,10 +99,12 @@ export async function findInstructionCandidates(params: {
       filter,
     });
     if (!response.matches || response.matches.length === 0) {
+      // fallback: оставляем фильтр по режиму и юрисдикции
       response = await index.query({
         vector: queryVector,
         topK: params.topK ?? 5,
         includeMetadata: true,
+        filter,
       });
     }
     if (!response.matches) return results;
@@ -306,6 +312,7 @@ export async function saveInstructionToPinecone(
   options?: {
     id?: string;
     version?: number;
+    documentMode?: string;
   }
 ): Promise<{ id: string }> {
   try {
@@ -351,6 +358,7 @@ export async function saveInstructionToPinecone(
       documentType: instruction.documentType,
       jurisdiction: instruction.jurisdiction,
       language: 'ru', // Пока фиксировано
+      documentMode: (options?.documentMode as any) || (instruction as any).documentMode || 'short',
       whenToUse: instruction.whenToUse,
       instructionQuality: instruction.instructionQuality,
       version: version,
@@ -400,6 +408,10 @@ export function mapPineconeMatchToInstruction(match: {
     
     // Парсим полную инструкцию из JSON-строки
     const instruction: Instruction = JSON.parse(match.metadata.fullInstruction);
+    // Проставляем режим из метаданных, если в инструкции нет
+    if (!instruction.documentMode && match.metadata?.documentMode) {
+      (instruction as any).documentMode = match.metadata.documentMode;
+    }
     
     return {
       id: match.id,

@@ -5,12 +5,13 @@ interface SearchInstructionRequest {
   documentType: string;
   jurisdiction?: string;
   shortDescription?: string;
+  documentMode?: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: SearchInstructionRequest = await request.json();
-    const { documentType, jurisdiction, shortDescription } = body;
+    const { documentType, jurisdiction, shortDescription, documentMode } = body;
 
     if (!documentType) {
       return NextResponse.json(
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
       jurisdiction: jurisdiction || 'RU',
       shortDescription,
       topK: 5,
+      documentMode,
     });
 
     return NextResponse.json({
