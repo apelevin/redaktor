@@ -6,7 +6,7 @@ import { calculateCost } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
 import type { DocumentMode } from '@/types/document-mode';
 import type { TermsDictionary } from '@/types/terms';
-import type { Instruction } from '@/types/instruction';
+import type { Instruction, InstructionMatch } from '@/types/instruction';
 
 export interface CostRecord {
   id: string;
@@ -43,6 +43,7 @@ interface DocumentStore {
   instruction: Instruction | null; // Сгенерированная инструкция
   jurisdiction: string | null; // Юрисдикция документа (по умолчанию "RU")
   instructionPineconeId: string | null; // ID инструкции в Pinecone после сохранения
+  instructionMatch: InstructionMatch | null; // Найденная инструкция из Pinecone
 
   // Actions
   setDocumentType: (type: string | null) => void;
@@ -71,6 +72,7 @@ interface DocumentStore {
   setInstruction: (instruction: Instruction | null) => void;
   setJurisdiction: (jurisdiction: string | null) => void;
   setInstructionPineconeId: (id: string | null) => void;
+  setInstructionMatch: (match: InstructionMatch | null) => void;
   reset: () => void;
   
 }
@@ -99,6 +101,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   instruction: null,
   jurisdiction: 'RU',
   instructionPineconeId: null,
+  instructionMatch: null,
 
   setDocumentType: (type) => set({ 
     documentType: type, 
@@ -263,6 +266,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
 
   setInstructionPineconeId: (id) => set({ instructionPineconeId: id }),
 
+  setInstructionMatch: (match) => set({ instructionMatch: match }),
+
   reset: () => set({
     documentType: null,
     context: {},
@@ -287,6 +292,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     instruction: null,
     jurisdiction: 'RU',
     instructionPineconeId: null,
+    instructionMatch: null,
   }),
 }));
 

@@ -71,3 +71,12 @@ export interface PineconeInstructionMetadata {
   fullInstruction: string;       // JSON.stringify(Instruction)
 }
 
+/**
+ * Результат поиска инструкции в Pinecone
+ */
+export interface InstructionMatch {
+  id: string;
+  score: number;
+  instruction: Instruction;
+}
+

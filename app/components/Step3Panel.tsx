@@ -7,6 +7,7 @@ import type { Section } from '@/types/document';
 import type { DocumentMode } from '@/types/document-mode';
 import type { SkeletonItem } from '@/types/document';
 import { getDefaultSelectedItems } from '@/lib/utils/skeleton-item-selection';
+import { TH_INSTRUCTION_STRONG } from '@/lib/pinecone/constants';
 import CostDisplay from './CostDisplay';
 import SkeletonChatPanel from './SkeletonChatPanel';
 

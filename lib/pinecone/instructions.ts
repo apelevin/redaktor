@@ -3,7 +3,7 @@ import { getIndex } from './client';
 import { createEmbedding } from '@/lib/openai/embeddings';
 import { INSTRUCTION_THRESHOLD } from './constants';
 import type { InstructionResult, Section, InstructionMetadata } from '@/types/document';
-import type { Instruction, PineconeInstructionMetadata } from '@/types/instruction';
+import type { Instruction, InstructionMatch, PineconeInstructionMetadata } from '@/types/instruction';
 
 const INSTRUCTIONS_INDEX = process.env.PINECONE_INSTRUCTIONS_INDEX || 'instructions';
 
@@ -34,19 +34,20 @@ function formatInstructionText(
 ): string {
   const styleText = style ? `Стиль: ${style}, ` : '';
   
-  // Формируем оглавление из skeleton
-  const formatSection = (section: Section, level: number = 0): string => {
-    const indent = '  '.repeat(level);
-    let result = `${indent}${section.title}\n`;
-    if (section.subsections) {
-      for (const subsection of section.subsections) {
-        result += formatSection(subsection, level + 1);
-      }
-    }
-    return result;
+  // Формируем оглавление из skeleton (поддержка только items)
+  const formatSection = (section: Section): string => {
+    const items = Array.isArray(section.items) ? section.items : [];
+    const itemsText = items
+      .map((item, index) => {
+        const text = typeof item === 'string' ? item : item?.text;
+        return text ? `  ${index + 1}. ${text}` : '';
+      })
+      .filter(Boolean)
+      .join('\n');
+    return [section.title, itemsText].filter(Boolean).join('\n');
   };
   
-  const skeletonText = skeleton.map(s => formatSection(s)).join('');
+  const skeletonText = skeleton.map(s => formatSection(s)).join('\n');
   
   let text = `Тип: ${document_type}. ${styleText}B2B, РФ.\nОглавление:\n${skeletonText}`;
   
@@ -55,6 +56,68 @@ function formatInstructionText(
   }
   
   return text;
+}
+
+export function buildInstructionQueryText(params: {
+  documentType: string;
+  jurisdiction: string;
+  shortDescription?: string;
+}): string {
+  const { documentType, jurisdiction, shortDescription } = params;
+  let queryText = `Тип документа: ${documentType}. Юрисдикция: ${jurisdiction}.`;
+  if (shortDescription && shortDescription.trim()) {
+    queryText += ` Описание: ${shortDescription}`;
+  }
+  return queryText;
+}
+
+export async function findInstructionCandidates(params: {
+  documentType: string;
+  jurisdiction?: string;
+  shortDescription?: string;
+  topK?: number;
+}): Promise<InstructionMatch[]> {
+  const results: InstructionMatch[] = [];
+  try {
+    const index = await getIndex(INSTRUCTIONS_INDEX);
+    const jurisdiction = params.jurisdiction || 'RU';
+    const queryText = buildInstructionQueryText({
+      documentType: params.documentType,
+      jurisdiction,
+      shortDescription: params.shortDescription,
+    });
+    const queryVector = await createEmbedding(queryText);
+    const filter: any = { jurisdiction: { $eq: jurisdiction } };
+    let response = await index.query({
+      vector: queryVector,
+      topK: params.topK ?? 5,
+      includeMetadata: true,
+      filter,
+    });
+    if (!response.matches || response.matches.length === 0) {
+      response = await index.query({
+        vector: queryVector,
+        topK: params.topK ?? 5,
+        includeMetadata: true,
+      });
+    }
+    if (!response.matches) return results;
+    for (const m of response.matches) {
+      try {
+        const mapped = mapPineconeMatchToInstruction(m);
+        results.push({
+          id: mapped.id,
+          score: mapped.score ?? 0,
+          instruction: mapped.instruction,
+        });
+      } catch (err) {
+        console.error('Error mapping instruction candidate:', err);
+      }
+    }
+  } catch (error) {
+    console.error('Error finding instruction candidates:', error);
+  }
+  return results;
 }
 
 export interface InstructionSearchParams {
@@ -125,11 +188,32 @@ export async function searchInstructions(
         }
         
         // Старый формат (обратная совместимость)
+        const legacySkeleton = metadata?.skeleton;
+        let skeletonArray: Section[] | undefined;
+
+        if (Array.isArray(legacySkeleton)) {
+          skeletonArray = legacySkeleton
+            .map((sec, index) => {
+              if (sec && typeof sec === 'object' && 'title' in sec && 'items' in sec) {
+                return sec as Section;
+              }
+              if (typeof sec === 'string') {
+                return {
+                  id: `section_${index}`,
+                  title: sec,
+                  items: [sec],
+                } as Section;
+              }
+              return undefined;
+            })
+            .filter(Boolean) as Section[];
+        }
+
         return {
           instruction_found: true,
-          skeleton: metadata?.skeleton as Section[],
-          questions: metadata?.questions as string[],
-          related_norms: metadata?.related_norms as string[],
+          skeleton: skeletonArray,
+          questions: Array.isArray(metadata?.questions) ? metadata?.questions as string[] : [],
+          related_norms: Array.isArray(metadata?.related_norms) ? metadata?.related_norms as string[] : [],
         };
       }
     }
