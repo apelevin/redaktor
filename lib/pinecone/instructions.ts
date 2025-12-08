@@ -179,10 +179,30 @@ export async function saveInstructionToPinecone(
   instruction: Instruction
 ): Promise<{ id: string }> {
   try {
+    console.log('Starting saveInstructionToPinecone...');
+    
+    // Валидация обязательных полей
+    if (!instruction.documentType) {
+      throw new Error('instruction.documentType is required');
+    }
+    if (!instruction.jurisdiction) {
+      throw new Error('instruction.jurisdiction is required');
+    }
+    if (!instruction.whenToUse) {
+      throw new Error('instruction.whenToUse is required');
+    }
+    if (!instruction.recommendedStructure || !Array.isArray(instruction.recommendedStructure)) {
+      throw new Error('instruction.recommendedStructure must be an array');
+    }
+    
+    console.log('Instruction documentType:', instruction.documentType);
+    
     const index = await getIndex(INSTRUCTIONS_INDEX);
+    console.log('Got Pinecone index:', INSTRUCTIONS_INDEX);
     
     // Генерируем UUID для id (формат: inst_...)
     const instruction_id = `inst_${randomUUID()}`;
+    console.log('Generated instruction_id:', instruction_id);
     
     // Формируем текст для embedding согласно спецификации:
     // "{documentType}. {jurisdiction}. {whenToUse}. {structureTitles}"
@@ -191,28 +211,41 @@ export async function saveInstructionToPinecone(
       .join(', ');
     
     const embeddingText = `${instruction.documentType}. ${instruction.jurisdiction}. ${instruction.whenToUse}. ${structureTitles}`;
+    console.log('Created embedding text, length:', embeddingText.length);
     
     // Создаем эмбеддинг
+    console.log('Creating embedding...');
     const vector = await createEmbedding(embeddingText);
+    console.log('Embedding created, vector length:', vector.length);
     
-    // Формируем метаданные - сохраняем полный JSON инструкции
+    // Формируем метаданные - сериализуем сложные объекты в JSON строки
+    // Pinecone не поддерживает вложенные объекты и массивы объектов в метаданных
+    // Ограничение размера метаданных: ~40KB на запись
+    const fullInstructionJson = JSON.stringify(instruction);
+    
+    // Проверяем размер метаданных (приблизительно)
+    const metadataSize = Buffer.byteLength(fullInstructionJson, 'utf8');
+    if (metadataSize > 35000) { // Оставляем запас на другие поля
+      console.warn(`Instruction metadata size is large: ${metadataSize} bytes`);
+    }
+    
     const metadata: any = {
       documentType: instruction.documentType,
       jurisdiction: instruction.jurisdiction,
-      whenToUse: instruction.whenToUse,
-      requiredUserInputs: instruction.requiredUserInputs,
-      recommendedStructure: instruction.recommendedStructure,
-      styleHints: instruction.styleHints,
-      placeholdersUsed: instruction.placeholdersUsed,
+      whenToUse: instruction.whenToUse.substring(0, 500), // Ограничиваем длину для поиска
       instructionQuality: instruction.instructionQuality,
       createdAt: new Date().toISOString(),
-      isSavedToKnowledgeBase: true,
-      approved: true, // Новые инструкции по умолчанию approved
       version: 1,
       usage_count: 0,
+      // Сохраняем полную инструкцию как JSON для возможности восстановления
+      fullInstruction: fullInstructionJson,
     };
     
     // Upsert в Pinecone
+    console.log('Upserting to Pinecone...');
+    console.log('Metadata keys:', Object.keys(metadata));
+    console.log('Metadata size (fullInstruction):', Buffer.byteLength(metadata.fullInstruction || '', 'utf8'), 'bytes');
+    
     await index.upsert([
       {
         id: instruction_id,
@@ -221,11 +254,17 @@ export async function saveInstructionToPinecone(
       },
     ]);
     
+    console.log('Successfully saved instruction to Pinecone:', instruction_id);
+    
     return {
       id: instruction_id,
     };
   } catch (error) {
     console.error('Error saving instruction to Pinecone:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
     throw error;
   }
 }

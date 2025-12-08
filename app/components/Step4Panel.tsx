@@ -24,12 +24,14 @@ export default function Step4Panel() {
     instruction,
     jurisdiction,
     questions,
+    instructionPineconeId,
     setCurrentStep,
     setOutputTextMode,
     addDocumentClause,
     setGeneratedDocument,
     addCostRecord,
     setInstruction,
+    setInstructionPineconeId,
   } = useDocumentStore();
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -39,6 +41,8 @@ export default function Step4Panel() {
   const [activeTab, setActiveTab] = useState<'document' | 'instruction'>('document');
   const [isGeneratingInstruction, setIsGeneratingInstruction] = useState(false);
   const [instructionError, setInstructionError] = useState<string | null>(null);
+  const [isSavingInstruction, setIsSavingInstruction] = useState(false);
+  const [saveInstructionError, setSaveInstructionError] = useState<string | null>(null);
 
   // Получаем текст пункта, учитывая обратную совместимость
   const getItemText = (item: SkeletonItem | string): string => {
@@ -243,6 +247,45 @@ export default function Step4Panel() {
     }
   };
 
+  const handleSaveInstructionToPinecone = async () => {
+    if (!instruction) {
+      setSaveInstructionError('Инструкция не найдена');
+      return;
+    }
+
+    setIsSavingInstruction(true);
+    setSaveInstructionError(null);
+
+    try {
+      const response = await fetch('/api/instruction/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          instruction,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Ошибка при сохранении инструкции');
+      }
+
+      const data = await response.json();
+      
+      // Сохраняем ID инструкции в store
+      if (data.id) {
+        setInstructionPineconeId(data.id);
+      }
+    } catch (err) {
+      console.error('Error saving instruction to Pinecone:', err);
+      setSaveInstructionError(err instanceof Error ? err.message : 'Неизвестная ошибка');
+    } finally {
+      setIsSavingInstruction(false);
+    }
+  };
+
   const handleDownloadMarkdown = () => {
     // Используем generatedDocument, если он есть, иначе собираем из documentClauses
     let documentText = generatedDocument;
@@ -349,7 +392,78 @@ export default function Step4Panel() {
           {activeTab === 'instruction' && generationComplete && (
             <div>
               {instruction ? (
-                <InstructionView instruction={instruction} />
+                <>
+                  <InstructionView instruction={instruction} />
+                  
+                  {/* Кнопка сохранения и статус */}
+                  <div className="mt-6 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                          Сохранение в базу знаний
+                        </h3>
+                        {instructionPineconeId ? (
+                          <div className="flex items-center gap-2 text-green-700">
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-sm font-medium">
+                              Инструкция сохранена в базу знаний
+                            </span>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-600">
+                            Сохраните инструкцию в базу знаний для использования в будущем
+                          </p>
+                        )}
+                        {instructionPineconeId && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            ID: {instructionPineconeId}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {saveInstructionError && (
+                      <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-red-700 text-sm">{saveInstructionError}</p>
+                      </div>
+                    )}
+                    
+                    <button
+                      onClick={handleSaveInstructionToPinecone}
+                      disabled={isSavingInstruction || !!instructionPineconeId}
+                      className={`w-full px-6 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                        instructionPineconeId
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : isSavingInstruction
+                          ? 'bg-blue-400 text-white cursor-not-allowed'
+                          : 'bg-green-600 text-white hover:bg-green-700'
+                      }`}
+                    >
+                      {isSavingInstruction ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                          <span>Сохранение...</span>
+                        </>
+                      ) : instructionPineconeId ? (
+                        <>
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          <span>Сохранено</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                          </svg>
+                          <span>Сохранить в базу знаний</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </>
               ) : (
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                   <h2 className="text-xl font-semibold mb-4">Инструкция по документу</h2>

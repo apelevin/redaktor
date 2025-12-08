@@ -42,6 +42,7 @@ interface DocumentStore {
   terms: TermsDictionary | null; // Словарь терминов договора
   instruction: Instruction | null; // Сгенерированная инструкция
   jurisdiction: string | null; // Юрисдикция документа (по умолчанию "RU")
+  instructionPineconeId: string | null; // ID инструкции в Pinecone после сохранения
 
   // Actions
   setDocumentType: (type: string | null) => void;
@@ -69,6 +70,7 @@ interface DocumentStore {
   setTerms: (terms: TermsDictionary | null) => void;
   setInstruction: (instruction: Instruction | null) => void;
   setJurisdiction: (jurisdiction: string | null) => void;
+  setInstructionPineconeId: (id: string | null) => void;
   reset: () => void;
   
 }
@@ -96,6 +98,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   terms: null,
   instruction: null,
   jurisdiction: 'RU',
+  instructionPineconeId: null,
 
   setDocumentType: (type) => set({ 
     documentType: type, 
@@ -250,9 +253,15 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
 
   setTerms: (terms) => set({ terms }),
 
-  setInstruction: (instruction) => set({ instruction }),
+  setInstruction: (instruction) => set({ 
+    instruction,
+    // Сбрасываем ID сохранения при генерации новой инструкции
+    instructionPineconeId: instruction ? null : null,
+  }),
 
   setJurisdiction: (jurisdiction) => set({ jurisdiction: jurisdiction || 'RU' }),
+
+  setInstructionPineconeId: (id) => set({ instructionPineconeId: id }),
 
   reset: () => set({
     documentType: null,
@@ -277,6 +286,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     terms: null,
     instruction: null,
     jurisdiction: 'RU',
+    instructionPineconeId: null,
   }),
 }));
 

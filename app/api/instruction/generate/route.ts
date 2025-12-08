@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sanitizeDocument } from '@/lib/utils/document-sanitizer';
 import { generateInstruction } from '@/lib/openai/instruction-generator';
-import { saveInstructionToPinecone } from '@/lib/pinecone/instructions';
 import type { Instruction } from '@/types/instruction';
 import type { Question } from '@/types/question';
 import type { Section } from '@/types/document';
@@ -125,20 +124,9 @@ export async function POST(request: NextRequest) {
       jurisdiction,
     });
     
-    // Шаг 4: Сохранение в Pinecone
-    let pineconeId: string | null = null;
-    try {
-      const saveResult = await saveInstructionToPinecone(generationResult.instruction);
-      pineconeId = saveResult.id;
-    } catch (pineconeError) {
-      // Логируем ошибку, но не прерываем процесс - инструкция уже сгенерирована
-      console.error('Error saving instruction to Pinecone:', pineconeError);
-    }
-    
-    // Шаг 5: Возврат инструкции клиенту
+    // Возврат инструкции клиенту
     return NextResponse.json({
       instruction: generationResult.instruction,
-      pineconeId,
       usage: generationResult.usage,
       model: generationResult.model,
     });
