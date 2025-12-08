@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useDocumentStore } from '@/lib/store/document-store';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { Instruction } from '@/types/instruction';
+import type { Section } from '@/types/document';
+import { getDefaultSelectedItems } from '@/lib/utils/skeleton-item-selection';
 import CostDisplay from './CostDisplay';
 
 interface InstructionCandidate {
@@ -24,6 +26,8 @@ export default function Step2Panel() {
     addCostRecord,
     jurisdiction,
     setInstructionMatch,
+    setSkeleton,
+    setSelectedSkeletonItems,
   } = useDocumentStore();
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -131,6 +135,14 @@ export default function Step2Panel() {
       score: cand.score,
       instruction: cand.instruction,
     });
+    // Проставляем скелет из инструкции сразу, чтобы не дергать OpenAI на шаге 3
+    const skel: Section[] = cand.instruction.recommendedStructure.map((sec) => ({
+      id: sec.sectionKey || sec.title,
+      title: sec.title,
+      items: [{ text: sec.description, importance: sec.isMandatory ? 'must' : 'recommended' }],
+    }));
+    setSkeleton(skel);
+    setSelectedSkeletonItems(getDefaultSelectedItems(skel, 'short')); // по умолчанию краткий
     setCurrentStep('step3');
   };
 

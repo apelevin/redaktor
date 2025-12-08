@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useDocumentStore } from '@/lib/store/document-store';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
@@ -31,6 +31,7 @@ export default function Step3Panel() {
     selectAllSkeletonItems,
     deselectAllSkeletonItems,
     addCostRecord,
+    instructionMatch,
   } = useDocumentStore();
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -39,6 +40,19 @@ export default function Step3Panel() {
   const handleGenerateSkeleton = async () => {
     if (!documentType) {
       setError('Тип документа не выбран');
+      return;
+    }
+
+    // Instruction-first: если есть точная инструкция — используем ее без LLM
+    if (instructionMatch && instructionMatch.score >= TH_INSTRUCTION_STRONG) {
+      const skel: Section[] = instructionMatch.instruction.recommendedStructure.map((sec) => ({
+        id: sec.sectionKey || sec.title,
+        title: sec.title,
+        items: [{ text: sec.description, importance: sec.isMandatory ? 'must' : 'recommended' }],
+      }));
+      setSkeleton(skel);
+      setSelectedSkeletonItems(getDefaultSelectedItems(skel, documentMode));
+      setError(null);
       return;
     }
 
@@ -69,7 +83,6 @@ export default function Step3Panel() {
           if (!termsResponse.ok) {
             const errorData = await termsResponse.json();
             console.warn('Failed to generate terms:', errorData.error);
-            // Продолжаем без терминов, если генерация не удалась
             currentTerms = null;
           } else {
             const termsData = await termsResponse.json();
@@ -77,7 +90,6 @@ export default function Step3Panel() {
               currentTerms = termsData.terms;
               setTerms(currentTerms);
               
-              // Отслеживаем затраты на генерацию терминов
               if (termsData.usage && termsData.model) {
                 addCostRecord(termsData.model, termsData.usage, 'terms_generation');
               }
@@ -87,7 +99,6 @@ export default function Step3Panel() {
           }
         } catch (termsError) {
           console.warn('Error generating terms:', termsError);
-          // Продолжаем без терминов, если генерация не удалась
           currentTerms = null;
         }
       }
@@ -112,17 +123,14 @@ export default function Step3Panel() {
 
       const data = await response.json();
 
-      // Сохраняем скелет в store
       if (data.skeleton && Array.isArray(data.skeleton)) {
         setSkeleton(data.skeleton);
-        // Автоматически выбираем пункты по умолчанию в зависимости от режима
         const defaultSelected = getDefaultSelectedItems(data.skeleton, documentMode);
         setSelectedSkeletonItems(defaultSelected);
       } else {
         throw new Error('Неверный формат ответа от сервера');
       }
 
-      // Отслеживаем затраты
       if (data.usage && data.model) {
         addCostRecord(data.model, data.usage, 'skeleton');
       }
@@ -133,6 +141,24 @@ export default function Step3Panel() {
       setIsGenerating(false);
     }
   };
+
+  // Автоматически подставляем скелет из инструкции при входе, чтобы пользователь сразу мог идти дальше
+  useEffect(() => {
+    if (
+      instructionMatch &&
+      instructionMatch.score >= TH_INSTRUCTION_STRONG &&
+      (!skeleton || skeleton.length === 0)
+    ) {
+      const skel: Section[] = instructionMatch.instruction.recommendedStructure.map((sec) => ({
+        id: sec.sectionKey || sec.title,
+        title: sec.title,
+        items: [{ text: sec.description, importance: sec.isMandatory ? 'must' : 'recommended' }],
+      }));
+      setSkeleton(skel);
+      setSelectedSkeletonItems(getDefaultSelectedItems(skel, documentMode));
+      setError(null);
+    }
+  }, [instructionMatch, skeleton, documentMode, setSkeleton, setSelectedSkeletonItems]);
 
   const handleBack = () => {
     setCurrentStep('step2');
