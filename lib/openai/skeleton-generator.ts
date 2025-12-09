@@ -1,10 +1,15 @@
 import { getOpenAIClient } from './client';
 import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
 import { getModelConfig } from './models';
+import { truncateForPrompt } from '@/lib/utils/truncate-for-prompt';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
 import type { DocumentMode } from '@/types/document-mode';
 import type { TermsDictionary } from '@/types/terms';
+
+const QA_CONTEXT_LIMIT = 4000;
+const QA_CONTEXT_ITEMS_LIMIT = 25;
+const TERMS_CHAR_LIMIT = 2000;
 
 export interface SkeletonGenerationParams {
   document_type: string;
@@ -26,27 +31,34 @@ export async function generateSkeleton(
   params: SkeletonGenerationParams
 ): Promise<SkeletonGenerationResult> {
   const client = getOpenAIClient();
-  
+
   // Если есть generatedContext, используем его, иначе используем qa_context
-  const contextText = params.generatedContext 
-    ? params.generatedContext
-    : (params.qa_context
-        ? params.qa_context.map(qa => `В: ${qa.question}\nО: ${qa.answer}`).join('\n\n')
-        : 'Контекст не собран.');
-  
+  const limitedQaContext = params.qa_context?.slice(-QA_CONTEXT_ITEMS_LIMIT);
+  const qaText = limitedQaContext
+    ? limitedQaContext.map(qa => `В: ${qa.question}\nО: ${qa.answer}`).join('\n\n')
+    : 'Контекст не собран.';
+
+  const contextText = params.generatedContext ?? qaText;
+  const truncatedContext = truncateForPrompt(contextText, QA_CONTEXT_LIMIT);
+  const contextMarker = truncatedContext !== contextText ? '\n\n[Контекст усечён для промпта]' : '';
+  const contextForPrompt = `${truncatedContext}${contextMarker}`;
+
   // Сериализуем terms в текстовый формат для промпта
   const termsText = params.terms && params.terms.length > 0
     ? params.terms.map(term => `"${term.name}" — ${term.definition}`).join('\n')
     : '';
+  const truncatedTerms = truncateForPrompt(termsText, TERMS_CHAR_LIMIT);
+  const termsMarker = truncatedTerms !== termsText ? '\n\n[Глоссарий усечён для промпта]' : '';
+  const termsForPrompt = `${truncatedTerms}${termsMarker}`;
   
   const prompt = await loadAndRenderPrompt('skeleton-generation.md', {
     document_type: params.document_type,
     jurisdiction: params.jurisdiction ? `Юрисдикция: ${params.jurisdiction}` : '',
     style: params.style ? `Стиль: ${params.style}` : '',
-    context: contextText,
+    context: contextForPrompt,
     has_generated_context: params.generatedContext ? 'true' : 'false',
     document_mode: params.document_mode || 'short',
-    terms: termsText,
+    terms: termsForPrompt,
   });
   
   try {
