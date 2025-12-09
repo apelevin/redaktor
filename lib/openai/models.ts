@@ -46,15 +46,17 @@ const defaultModelConfig: Record<PipelineStep, ModelConfig> = {
     service_tier: 'flex',
   },
   skeleton_generation: {
-    model: 'gpt-5.1',
-    reasoning_effort: 'medium',
-    verbosity: 'medium',
+    model: 'gpt-5-mini',
+    reasoning_effort: 'low',
+    verbosity: 'low',
+    // Для сложных юрисдикций можно переключить на gpt-5.1 через переменные окружения
     service_tier: 'flex',
   },
   clause_generation: {
-    model: 'gpt-5.1',
-    reasoning_effort: 'medium',
-    verbosity: 'high',
+    model: 'gpt-5-mini',
+    reasoning_effort: 'low',
+    verbosity: 'low',
+    // Более дорогие модели пригодятся при неоднозначных формулировках или редких правовых системах
     service_tier: 'flex',
   },
 };
