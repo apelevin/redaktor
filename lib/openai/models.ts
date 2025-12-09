@@ -17,6 +17,13 @@ export interface ModelConfig {
   service_tier?: 'flex' | 'standard' | 'priority' | 'batch';
 }
 
+export interface ChatCompletionModelParams {
+  model: string;
+  reasoning_effort?: 'low' | 'medium' | 'high';
+  verbosity?: 'low' | 'medium' | 'high';
+  service_tier?: 'flex' | 'standard' | 'priority' | 'batch';
+}
+
 /**
  * Конфигурация моделей по умолчанию для каждого шага
  */
@@ -91,6 +98,28 @@ export function getModelConfig(step: PipelineStep): ModelConfig {
     verbosity: envVerbosity || defaultConfig.verbosity,
     service_tier: envServiceTier || globalServiceTier || defaultConfig.service_tier || 'flex',
   };
+}
+
+/**
+ * Формирует общую часть параметров для chat.completions.create
+ * Используется для единообразного применения настроек модели
+ */
+export function buildChatCompletionParams(modelConfig: ModelConfig): ChatCompletionModelParams {
+  const params: ChatCompletionModelParams = { model: modelConfig.model };
+
+  if (modelConfig.reasoning_effort && modelConfig.reasoning_effort !== 'none') {
+    params.reasoning_effort = modelConfig.reasoning_effort;
+  }
+
+  if (modelConfig.verbosity) {
+    params.verbosity = modelConfig.verbosity;
+  }
+
+  if (modelConfig.service_tier) {
+    params.service_tier = modelConfig.service_tier;
+  }
+
+  return params;
 }
 
 /**

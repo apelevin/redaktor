@@ -1,6 +1,6 @@
 import { getOpenAIClient } from './client';
 import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
-import { getModelConfig } from './models';
+import { buildChatCompletionParams, getModelConfig } from './models';
 import { truncateForPrompt } from '@/lib/utils/truncate-for-prompt';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { Section } from '@/types/document';
@@ -65,7 +65,7 @@ export async function generateSkeleton(
     const modelConfig = getModelConfig('skeleton_generation');
     
     const response = await client.chat.completions.create({
-      model: modelConfig.model,
+      ...buildChatCompletionParams(modelConfig),
       messages: [
         {
           role: 'system',
@@ -76,11 +76,6 @@ export async function generateSkeleton(
           content: prompt,
         },
       ],
-      ...(modelConfig.reasoning_effort && modelConfig.reasoning_effort !== 'none' && { 
-        reasoning_effort: modelConfig.reasoning_effort as 'low' | 'medium' | 'high' 
-      }),
-      ...(modelConfig.verbosity && { verbosity: modelConfig.verbosity }),
-      ...(modelConfig.service_tier && { service_tier: modelConfig.service_tier }),
       response_format: { type: 'json_object' },
     });
     

@@ -1,6 +1,6 @@
 import { getOpenAIClient } from './client';
 import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
-import { getModelConfig } from './models';
+import { buildChatCompletionParams, getModelConfig } from './models';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 
 export interface ContextGenerationParams {
@@ -53,7 +53,7 @@ export async function generateContractContext(
     const modelConfig = getModelConfig('context_generation');
     
     const response = await client.chat.completions.create({
-      model: modelConfig.model,
+      ...buildChatCompletionParams(modelConfig),
       messages: [
         {
           role: 'system',
@@ -64,11 +64,6 @@ export async function generateContractContext(
           content: prompt,
         },
       ],
-      ...(modelConfig.reasoning_effort && modelConfig.reasoning_effort !== 'none' && { 
-        reasoning_effort: modelConfig.reasoning_effort as 'low' | 'medium' | 'high' 
-      }),
-      ...(modelConfig.verbosity && { verbosity: modelConfig.verbosity }),
-      ...(modelConfig.service_tier && { service_tier: modelConfig.service_tier }),
     });
     
     const content = response.choices[0]?.message?.content;
