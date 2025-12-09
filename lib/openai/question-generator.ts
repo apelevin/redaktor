@@ -1,8 +1,13 @@
 import { getOpenAIClient } from './client';
 import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
 import { getModelConfig } from './models';
+import { truncateForPrompt } from '@/lib/utils/truncate-for-prompt';
 import type { Question } from '@/types/question';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
+
+const CONTEXT_CHAR_LIMIT = 6000;
+const ANSWERS_ARRAY_LIMIT = 20;
+const ANSWERED_IDS_LIMIT = 50;
 
 export interface QuestionGenerationResult {
   question: Question | null;
@@ -20,11 +25,19 @@ export async function generateNextQuestion(
   answeredQuestionIds: string[]
 ): Promise<QuestionGenerationResult> {
   const client = getOpenAIClient();
-  
+
+  const compactContext = compactContextForPrompt(context, ANSWERS_ARRAY_LIMIT);
+  const contextString = JSON.stringify(compactContext, null, 2);
+  const contextForPrompt = truncateForPrompt(contextString, CONTEXT_CHAR_LIMIT);
+
+  const limitedAnsweredIds = answeredQuestionIds.slice(-ANSWERED_IDS_LIMIT);
+  const answeredIdsString = JSON.stringify(limitedAnsweredIds, null, 2);
+  const answeredIdsForPrompt = truncateForPrompt(answeredIdsString, CONTEXT_CHAR_LIMIT / 2);
+
   const prompt = await loadAndRenderPrompt('question-generation.md', {
     documentType,
-    context: JSON.stringify(context, null, 2),
-    answeredQuestionIds: JSON.stringify(answeredQuestionIds, null, 2),
+    context: contextForPrompt,
+    answeredQuestionIds: answeredIdsForPrompt,
   });
 
   try {
@@ -115,4 +128,19 @@ export async function generateNextQuestion(
     console.error('Error generating question:', error);
     return { question: null };
   }
+}
+
+function compactContextForPrompt(value: any, arrayLimit: number): any {
+  if (Array.isArray(value)) {
+    return value.slice(-arrayLimit);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.entries(value).reduce<Record<string, any>>((acc, [key, val]) => {
+      acc[key] = compactContextForPrompt(val, arrayLimit);
+      return acc;
+    }, {});
+  }
+
+  return value;
 }
