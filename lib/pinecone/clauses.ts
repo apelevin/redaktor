@@ -44,6 +44,7 @@ export interface ClauseSearchParams {
   current_section: string;
   style?: string;
   qa_context?: Array<{ question: string; answer: string }>;
+  instructionId?: string; // Опционально: фильтр по ID инструкции
 }
 
 export async function searchClause(
@@ -67,6 +68,11 @@ export async function searchClause(
     
     if (params.style) {
       filter.style = { $eq: params.style };
+    }
+    
+    // Если указан instructionId, фильтруем по нему
+    if (params.instructionId) {
+      filter.instructionId = { $eq: params.instructionId };
     }
     
     const queryResponse = await index.query({
@@ -120,6 +126,7 @@ export interface UpsertClauseParams {
   clause: Clause;
   skeleton: Section[];
   source_doc_id?: string;
+  instructionId?: string; // ID инструкции, к которой относится формулировка
   contract_variables?: Record<string, any>;
 }
 
@@ -156,6 +163,7 @@ export async function upsertClause(
       style: params.style || 'default',
       section_path,
       source_doc_id,
+      instructionId: params.instructionId,
       approved: true,
       quality_score: 0.0,
     };
@@ -192,6 +200,88 @@ export async function upsertClause(
   } catch (error) {
     console.error('Error upserting clause:', error);
     throw error;
+  }
+}
+
+/**
+ * Находит все формулировки, связанные с конкретной инструкцией
+ * Используется после выбора инструкции для получения связанных формулировок
+ */
+export async function findClausesByInstructionId(
+  instructionId: string,
+  options?: {
+    document_type?: string;
+    style?: string;
+    topK?: number;
+  }
+): Promise<Array<{
+  id: string;
+  clause: Clause;
+  metadata: any;
+  score?: number;
+}>> {
+  try {
+    const index = await getIndex(CLAUSES_INDEX);
+    
+    // Формируем фильтр по instructionId
+    const filter: any = {
+      instructionId: { $eq: instructionId },
+      approved: { $eq: true },
+    };
+    
+    // Дополнительные фильтры, если указаны
+    if (options?.document_type) {
+      filter.document_type = { $eq: options.document_type };
+    }
+    
+    if (options?.style) {
+      filter.style = { $eq: options.style };
+    }
+    
+    // Используем query с минимальным вектором-заглушкой для фильтрации по метаданным
+    // Размерность должна соответствовать используемой модели embedding
+    const EMBEDDING_DIMENSION = 1024; // text-embedding-3-small
+    const queryResponse = await index.query({
+      vector: new Array(EMBEDDING_DIMENSION).fill(0), // Заглушка вектора
+      topK: options?.topK ?? 100,
+      includeMetadata: true,
+      filter,
+    });
+    
+    const results: Array<{
+      id: string;
+      clause: Clause;
+      metadata: any;
+      score?: number;
+    }> = [];
+    
+    if (queryResponse.matches) {
+      for (const match of queryResponse.matches) {
+        const metadata = match.metadata;
+        const clause: Clause = {
+          id: match.id || `clause-${Date.now()}`,
+          sectionId: metadata?.section_path as string || '',
+          content: metadata?.content as string || '',
+          source: 'rag',
+          metadata: {
+            sourceType: metadata?.sourceType as 'template' | 'law' | 'case',
+            sourceReference: metadata?.sourceReference as string,
+          },
+        };
+        
+        results.push({
+          id: match.id || '',
+          clause,
+          metadata,
+          score: match.score,
+        });
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Error finding clauses by instruction ID:', error);
+    return [];
   }
 }
 

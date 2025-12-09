@@ -74,6 +74,7 @@ export interface ClauseMetadata {
   style: string;
   section_path: string;
   source_doc_id: string;
+  instructionId?: string; // ID инструкции, к которой относится формулировка
   approved: boolean;
   quality_score: number;
   [key: string]: any; // для опциональных переменных

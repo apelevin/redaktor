@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sanitizeDocument } from '@/lib/utils/document-sanitizer';
 import { generateInstruction } from '@/lib/openai/instruction-generator';
+import { isPartiesOrRequisitesSection } from '@/lib/utils/section-filter';
 import type { Instruction } from '@/types/instruction';
 import type { Question } from '@/types/question';
 import type { Section } from '@/types/document';
@@ -27,6 +28,11 @@ function assembleDocumentFromClauses(
   const sections: string[] = [];
   
   skeleton.forEach((section) => {
+    // Пропускаем разделы про стороны и реквизиты
+    if (isPartiesOrRequisitesSection(section.title, section.id)) {
+      return;
+    }
+
     const sectionTexts: string[] = [];
     let hasItems = false;
     
