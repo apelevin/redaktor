@@ -29,10 +29,11 @@ export async function stylePlanner(
 
   // Update state
   const updatedState = updateAgentStateData(agentState, { stylePreset });
-  const updatedStateWithStep = updateAgentStateStep(
-    updatedState,
-    "clause_generator"
-  );
+  // Don't change step here - let pipeline handle it
+  // const updatedStateWithStep = updateAgentStateStep(
+  //   updatedState,
+  //   "clause_generator"
+  // );
 
   const chatMessage: ChatMessage = {
     id: `msg-${Date.now()}`,
@@ -43,7 +44,7 @@ export async function stylePlanner(
 
   return {
     type: "continue",
-    state: updatedStateWithStep,
+    state: updatedState, // Return state with current step, pipeline will advance it
     chatMessages: [chatMessage],
   };
 }

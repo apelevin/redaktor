@@ -23,9 +23,10 @@ export async function missionInterpreter(
 
   // If mission already exists, skip
   if (agentState.internalData.mission) {
+    // Don't change step here - let pipeline handle it
     return {
       type: "continue",
-      state: updateAgentStateStep(agentState, "issue_spotter"),
+      state: agentState, // Return state with current step, pipeline will advance it
       chatMessages: [],
     };
   }
@@ -48,10 +49,12 @@ export async function missionInterpreter(
 Если какая-то информация не указана явно, используй null. Для documentType и jurisdiction используй "OTHER" только если действительно не можешь определить.`;
 
   try {
+    console.log("[mission_interpreter] Calling LLM with message:", userMessage);
     const response = await llm.chatJSON<Partial<LegalDocumentMission>>([
       { role: "system", content: systemPrompt },
       { role: "user", content: userMessage },
     ]);
+    console.log("[mission_interpreter] LLM response:", JSON.stringify(response, null, 2));
 
     // Check if we have enough information
     const missingFields: string[] = [];
@@ -105,11 +108,16 @@ export async function missionInterpreter(
       riskTolerance: response.riskTolerance || "medium",
     };
 
+    console.log("[mission_interpreter] Created mission:", JSON.stringify(mission, null, 2));
+    
     const updatedState = updateAgentStateData(agentState, { mission });
-    const updatedStateWithStep = updateAgentStateStep(
-      updatedState,
-      "issue_spotter"
-    );
+    console.log("[mission_interpreter] Updated state internalData keys:", Object.keys(updatedState.internalData));
+    
+    // Don't change step here - let pipeline handle it
+    // const updatedStateWithStep = updateAgentStateStep(
+    //   updatedState,
+    //   "issue_spotter"
+    // );
 
     const chatMessage: ChatMessage = {
       id: `msg-${Date.now()}`,
@@ -120,10 +128,11 @@ export async function missionInterpreter(
 
     return {
       type: "continue",
-      state: updatedStateWithStep,
+      state: updatedState, // Return state with current step, pipeline will advance it
       chatMessages: [chatMessage],
     };
   } catch (error) {
+    console.error("[mission_interpreter] Error:", error);
     const errorMessage: ChatMessage = {
       id: `error-${Date.now()}`,
       role: "assistant",

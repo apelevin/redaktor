@@ -123,10 +123,11 @@ export async function clauseRequirementsGenerator(
     clauseRequirements: requirements,
     liabilityCapDecided: true,
   });
-  const updatedStateWithStep = updateAgentStateStep(
-    updatedState,
-    "style_planner"
-  );
+  // Don't change step here - let pipeline handle it
+  // const updatedStateWithStep = updateAgentStateStep(
+  //   updatedState,
+  //   "style_planner"
+  // );
 
   const chatMessage: ChatMessage = {
     id: `msg-${Date.now()}`,
@@ -135,11 +136,11 @@ export async function clauseRequirementsGenerator(
     timestamp: new Date(),
   };
 
-  return {
-    type: "continue",
-    state: updatedStateWithStep,
-    chatMessages: [chatMessage],
-  };
+    return {
+      type: "continue",
+      state: updatedState, // Return state with current step, pipeline will advance it
+      chatMessages: [chatMessage],
+    };
 }
 
 function isIssueRelevantToSection(issue: any, section: any): boolean {

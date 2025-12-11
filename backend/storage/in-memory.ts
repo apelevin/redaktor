@@ -42,11 +42,30 @@ export class InMemoryStorage {
 
   // Agent state operations
   saveAgentState(state: AgentState): void {
-    this.agentStates.set(state.documentId, state);
+    // Deep clone to ensure we save a complete copy
+    const stateToSave: AgentState = {
+      documentId: state.documentId,
+      step: state.step,
+      internalData: JSON.parse(JSON.stringify(state.internalData)), // Deep clone
+    };
+    console.log(`[storage] Saving state for ${state.documentId}, step: ${state.step}, internalData keys:`, Object.keys(stateToSave.internalData));
+    this.agentStates.set(state.documentId, stateToSave);
   }
 
   getAgentState(documentId: string): AgentState | undefined {
-    return this.agentStates.get(documentId);
+    const state = this.agentStates.get(documentId);
+    if (!state) {
+      console.log(`[storage] No state found for ${documentId}`);
+      return undefined;
+    }
+    // Deep clone to ensure we return a copy, not a reference
+    const cloned = {
+      documentId: state.documentId,
+      step: state.step,
+      internalData: JSON.parse(JSON.stringify(state.internalData)), // Deep clone
+    };
+    console.log(`[storage] Loaded state for ${documentId}, step: ${cloned.step}, internalData keys:`, Object.keys(cloned.internalData));
+    return cloned;
   }
 
   updateAgentState(documentId: string, patch: Partial<AgentState>): void {

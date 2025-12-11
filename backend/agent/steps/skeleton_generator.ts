@@ -22,8 +22,16 @@ export async function skeletonGenerator(
     | undefined;
   const issues = agentState.internalData.issues as any[] | undefined;
 
-  if (!mission || !issues) {
-    throw new Error("Mission or issues not found in agent state");
+  if (!mission) {
+    throw new Error(
+      `Mission not found in agent state. Current internalData keys: ${Object.keys(agentState.internalData).join(", ")}`
+    );
+  }
+  
+  if (!issues) {
+    throw new Error(
+      `Issues not found in agent state. Current internalData keys: ${Object.keys(agentState.internalData).join(", ")}`
+    );
   }
 
   // Generate skeleton based on document type and jurisdiction
@@ -31,10 +39,11 @@ export async function skeletonGenerator(
 
   // Update state
   const updatedState = updateAgentStateData(agentState, { skeleton });
-  const updatedStateWithStep = updateAgentStateStep(
-    updatedState,
-    "clause_requirements_generator"
-  );
+  // Don't change step here - let pipeline handle it
+  // const updatedStateWithStep = updateAgentStateStep(
+  //   updatedState,
+  //   "clause_requirements_generator"
+  // );
 
   const chatMessage: ChatMessage = {
     id: `msg-${Date.now()}`,
@@ -45,7 +54,7 @@ export async function skeletonGenerator(
 
   return {
     type: "continue",
-    state: updatedStateWithStep,
+    state: updatedState, // Return state with current step, pipeline will advance it
     chatMessages: [chatMessage],
   };
 }

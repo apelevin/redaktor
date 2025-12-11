@@ -107,15 +107,23 @@ export class OpenRouterClient {
     messages: OpenRouterMessage[],
     config?: OpenRouterConfig
   ): Promise<T> {
+    const model = config?.model || this.defaultModel;
+    console.log(`[OpenRouter] Calling model: ${model}`);
+    
     const response = await this.chatWithRetry(messages, config);
+    console.log(`[OpenRouter] Raw response length: ${response.length} chars`);
+    
     try {
       // Try to extract JSON from markdown code blocks if present
       const jsonMatch = response.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
       const jsonString = jsonMatch ? jsonMatch[1] : response;
-      return JSON.parse(jsonString) as T;
+      const parsed = JSON.parse(jsonString) as T;
+      console.log(`[OpenRouter] Parsed JSON successfully`);
+      return parsed;
     } catch (error) {
+      console.error(`[OpenRouter] Failed to parse JSON. Response: ${response.substring(0, 500)}`);
       throw new Error(
-        `Failed to parse JSON response: ${error}. Response: ${response}`
+        `Failed to parse JSON response: ${error}. Response: ${response.substring(0, 500)}`
       );
     }
   }

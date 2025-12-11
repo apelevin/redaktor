@@ -105,10 +105,11 @@ export async function clauseGenerator(
 
   // Update state
   const updatedState = updateAgentStateData(agentState, {});
-  const updatedStateWithStep = updateAgentStateStep(
-    updatedState,
-    "document_linter"
-  );
+  // Don't change step here - let pipeline handle it
+  // const updatedStateWithStep = updateAgentStateStep(
+  //   updatedState,
+  //   "document_linter"
+  // );
 
   const chatMessage: ChatMessage = {
     id: `msg-${Date.now()}`,
@@ -119,7 +120,7 @@ export async function clauseGenerator(
 
   return {
     type: "continue",
-    state: updatedStateWithStep,
+    state: updatedState, // Return state with current step, pipeline will advance it
     documentPatch: {
       id: currentDocument.id,
       mission: currentDocument.mission,

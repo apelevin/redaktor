@@ -27,18 +27,29 @@ export async function executePipelineStep(
   let agentState = request.agentState;
   let document: LegalDocument | null = null;
 
-  // Load or create document
+  // Load or create document and state
   if (agentState) {
+    // Always load fresh state from storage to ensure we have all data
+    const freshState = storage.getAgentState(agentState.documentId);
+    if (freshState) {
+      console.log(`[pipeline] Loaded fresh state for ${agentState.documentId}, step: ${freshState.step}, internalData keys:`, Object.keys(freshState.internalData));
+      agentState = freshState;
+    } else {
+      console.log(`[pipeline] No fresh state found for ${agentState.documentId}, using provided state`);
+    }
     document = storage.getDocument(agentState.documentId) || null;
   } else {
     // Create new document and state
     const documentId = `doc-${Date.now()}`;
+    console.log(`[pipeline] Creating new document and state: ${documentId}`);
     agentState = {
       documentId,
       step: "mission_interpreter",
       internalData: {},
     };
   }
+  
+  console.log(`[pipeline] Executing step: ${agentState.step}, documentId: ${agentState.documentId}`);
 
   // Handle user answer if provided
   if (request.userAnswer && agentState) {
@@ -88,7 +99,17 @@ export async function executePipelineStep(
     }
 
     // Save updated state and document
+    // Make sure we save the complete state with all internalData
+    console.log(`[pipeline] Saving state after step ${currentStep}, internalData keys:`, Object.keys(result.state.internalData));
     storage.saveAgentState(result.state);
+    
+    // Verify the state was saved correctly
+    const savedState = storage.getAgentState(result.state.documentId);
+    if (!savedState) {
+      throw new Error(`Failed to save agent state for document ${result.state.documentId}`);
+    }
+    console.log(`[pipeline] State saved successfully, verified keys:`, Object.keys(savedState.internalData));
+    
     if (result.type === "continue" || result.type === "need_user_input") {
       if (result.documentPatch) {
         // Load document again in case it was created in the step
@@ -110,15 +131,32 @@ export async function executePipelineStep(
     // Auto-continue if result is "continue" and there's a next step
     if (result.type === "continue") {
       const nextStep = getNextStep(result.state.step);
+      console.log(`[pipeline] Current step: ${result.state.step}, next step: ${nextStep}`);
+      
       if (nextStep) {
-        // Update state to next step
-        result.state.step = nextStep;
-        storage.saveAgentState(result.state);
+        // Update state to next step - preserve all internalData
+        const updatedState: AgentState = {
+          ...result.state,
+          step: nextStep,
+        };
+        console.log(`[pipeline] Updating step to ${nextStep}, preserving internalData keys:`, Object.keys(updatedState.internalData));
+        storage.saveAgentState(updatedState);
 
-        // Recursively call next step
+        // Load fresh state from storage to ensure we have all data
+        const freshState = storage.getAgentState(result.state.documentId);
+        if (!freshState) {
+          throw new Error(`Agent state not found for document ${result.state.documentId}`);
+        }
+        
+        console.log(`[pipeline] Loaded fresh state for next step, internalData keys:`, Object.keys(freshState.internalData));
+        console.log(`[pipeline] Auto-continuing to step: ${nextStep}`);
+
+        // Recursively call next step with fresh state
         return executePipelineStep({
-          agentState: result.state,
+          agentState: freshState,
         });
+      } else {
+        console.log(`[pipeline] No next step, pipeline finished`);
       }
     }
 
