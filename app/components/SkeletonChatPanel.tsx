@@ -143,46 +143,9 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
         // Вопрос нужен - показываем его
         const question = data.question as Question;
         
-        // Проверяем, не был ли этот вопрос уже добавлен в сообщения
-        // Проверяем и по ID, и по тексту (первые 50 символов), чтобы избежать дублирования похожих вопросов
-        const questionAlreadyInMessages = messages.some(
-          msg => {
-            if (msg.type === 'question' && typeof msg.content !== 'string') {
-              // Проверка по ID
-              if (msg.content.id === question.id) {
-                return true;
-              }
-              // Проверка по тексту (первые 50 символов) - если очень похожи, считаем дубликатом
-              const existingText = msg.content.text.substring(0, 50).toLowerCase().trim();
-              const newText = question.text.substring(0, 50).toLowerCase().trim();
-              if (existingText === newText || 
-                  (existingText.length > 30 && newText.length > 30 && 
-                   existingText.includes(newText.substring(0, 30)) || 
-                   newText.includes(existingText.substring(0, 30)))) {
-                return true;
-              }
-            }
-            return false;
-          }
-        );
-        
-        if (!questionAlreadyInMessages) {
-          setCurrentQuestionState(question);
-          addMessage('question', question);
-        } else {
-          // Вопрос уже был задан (похожий), просто устанавливаем его как текущий
-          // Находим уже существующий вопрос в messages
-          const existingQuestion = messages.find(
-            msg => msg.type === 'question' && typeof msg.content !== 'string' && 
-            (msg.content.id === question.id || 
-             msg.content.text.substring(0, 50).toLowerCase().trim() === question.text.substring(0, 50).toLowerCase().trim())
-          );
-          if (existingQuestion && typeof existingQuestion.content !== 'string') {
-            setCurrentQuestionState(existingQuestion.content);
-          } else {
-            setCurrentQuestionState(question);
-          }
-        }
+        // НЕ добавляем вопрос в messages сразу - он будет добавлен после ответа пользователя
+        // Это предотвращает двойное отображение (в истории и как текущий вопрос)
+        setCurrentQuestionState(question);
         setIsLoading(false);
       } else {
         // Вопрос не нужен - тихо пропускаем и переходим к следующему пункту
@@ -242,6 +205,11 @@ export default function SkeletonChatPanel({ selectedItems, onAllItemsProcessed }
         selectedOptionIds,
       }
     );
+
+    // Добавляем вопрос в историю сообщений (после того, как на него ответили)
+    if (currentQuestion) {
+      addMessage('question', currentQuestion);
+    }
 
     // Форматируем ответ для отображения в чате
     let answerText: string;

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDocumentStore } from '@/lib/store/document-store';
 import type { Question, QuestionAnswer } from '@/types/question';
+import type { DocumentMode } from '@/types/document-mode';
 import QuestionRenderer from './questions/QuestionRenderer';
 import CompletionChoice from './CompletionChoice';
 import { mergeAnswerToContext } from '@/lib/utils/context-merge';
@@ -27,7 +28,9 @@ export default function ChatPanel() {
     currentQuestionId,
     completionState,
     nextStep,
+    documentMode,
     setDocumentType,
+    setDocumentMode,
     addAnswer,
     setCurrentQuestion,
     addQuestion,
@@ -361,7 +364,7 @@ export default function ChatPanel() {
         </div>
         
         {!documentType ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <input
               type="text"
               value={newDocumentType}
@@ -369,6 +372,27 @@ export default function ChatPanel() {
               placeholder="Введите тип документа (например: service_contract)"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Режим генерации документа:
+              </label>
+              <select
+                value={documentMode}
+                onChange={(e) => setDocumentMode(e.target.value as DocumentMode)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="short">Краткий</option>
+                <option value="standard">Стандартный</option>
+                <option value="extended">Расширенный</option>
+                <option value="expert">Экспертный</option>
+              </select>
+              <p className="mt-2 text-xs text-gray-500">
+                {documentMode === 'short' && 'Минимальный набор разделов и пунктов'}
+                {documentMode === 'standard' && 'Типовой договор с полной структурой'}
+                {documentMode === 'extended' && 'Дополнительные пункты для рисков и гарантий'}
+                {documentMode === 'expert' && 'Максимально подробный каркас документа'}
+              </p>
+            </div>
             <button
               onClick={() => startNewDocument(newDocumentType)}
               disabled={!newDocumentType.trim() || isLoading}
@@ -378,8 +402,18 @@ export default function ChatPanel() {
             </button>
           </div>
         ) : (
-          <div className="text-sm text-gray-600">
-            Тип документа: <span className="font-semibold">{documentType}</span>
+          <div className="space-y-2">
+            <div className="text-sm text-gray-600">
+              Тип документа: <span className="font-semibold">{documentType}</span>
+            </div>
+            <div className="text-sm text-gray-600">
+              Режим генерации: <span className="font-semibold">
+                {documentMode === 'short' && 'Краткий'}
+                {documentMode === 'standard' && 'Стандартный'}
+                {documentMode === 'extended' && 'Расширенный'}
+                {documentMode === 'expert' && 'Экспертный'}
+              </span>
+            </div>
           </div>
         )}
       </div>
@@ -412,8 +446,10 @@ export default function ChatPanel() {
                     </ul>
                   )}
                 </div>
-              ) : (
+              ) : typeof message.content === 'string' ? (
                 <p>{message.content}</p>
+              ) : (
+                <p>{JSON.stringify(message.content)}</p>
               )}
             </div>
           </div>

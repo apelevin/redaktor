@@ -287,25 +287,16 @@ export default function Step3Panel() {
                 с разделами и пунктами, включая все стандартные разделы, необходимые для данного типа договора.
               </p>
               
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Режим генерации документа:
-                </label>
-                <select
-                  value={documentMode}
-                  onChange={(e) => setDocumentMode(e.target.value as DocumentMode)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="short">Краткий</option>
-                  <option value="standard">Стандартный</option>
-                  <option value="extended">Расширенный</option>
-                  <option value="expert">Экспертный</option>
-                </select>
-                <p className="mt-2 text-xs text-gray-500">
-                  {documentMode === 'short' && 'Минимальный набор разделов и пунктов'}
-                  {documentMode === 'standard' && 'Типовой договор с полной структурой'}
-                  {documentMode === 'extended' && 'Дополнительные пункты для рисков и гарантий'}
-                  {documentMode === 'expert' && 'Максимально подробный каркас документа'}
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600">
+                  <span className="font-medium">Режим генерации:</span>{' '}
+                  {documentMode === 'short' && 'Краткий (минимальный набор разделов и пунктов)'}
+                  {documentMode === 'standard' && 'Стандартный (типовой договор с полной структурой)'}
+                  {documentMode === 'extended' && 'Расширенный (дополнительные пункты для рисков и гарантий)'}
+                  {documentMode === 'expert' && 'Экспертный (максимально подробный каркас документа)'}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Режим выбран на первой странице и заблокирован для изменения
                 </p>
               </div>
 
