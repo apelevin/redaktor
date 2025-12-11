@@ -1,6 +1,6 @@
 import { getOpenAIClient } from './client';
 import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
-import { getModelConfig } from './models';
+import { buildChatCompletionParams, getModelConfig } from './models';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { TermsDictionary } from '@/types/terms';
 
@@ -29,7 +29,7 @@ export async function generateTerms(
     const modelConfig = getModelConfig('terms_generation');
     
     const response = await client.chat.completions.create({
-      model: modelConfig.model,
+      ...buildChatCompletionParams(modelConfig),
       messages: [
         {
           role: 'system',
@@ -41,11 +41,6 @@ export async function generateTerms(
         },
       ],
       response_format: { type: 'json_object' },
-      ...(modelConfig.reasoning_effort && modelConfig.reasoning_effort !== 'none' && { 
-        reasoning_effort: modelConfig.reasoning_effort as 'low' | 'medium' | 'high' 
-      }),
-      ...(modelConfig.verbosity && { verbosity: modelConfig.verbosity }),
-      ...(modelConfig.service_tier && { service_tier: modelConfig.service_tier }),
     });
     
     const content = response.choices[0]?.message?.content;

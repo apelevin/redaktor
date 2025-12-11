@@ -1,6 +1,6 @@
 import { getOpenAIClient } from './client';
 import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
-import { getModelConfig } from './models';
+import { buildChatCompletionParams, getModelConfig } from './models';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
 import type { Question } from '@/types/question';
 import type { DocumentMode } from '@/types/document-mode';
@@ -57,7 +57,7 @@ export async function generateSkeletonItemQuestion(
     const modelConfig = getModelConfig('question_generation');
     
     const response = await client.chat.completions.create({
-      model: modelConfig.model,
+      ...buildChatCompletionParams(modelConfig),
       messages: [
         {
           role: 'system',
@@ -68,11 +68,6 @@ export async function generateSkeletonItemQuestion(
           content: prompt,
         },
       ],
-      ...(modelConfig.reasoning_effort && modelConfig.reasoning_effort !== 'none' && { 
-        reasoning_effort: modelConfig.reasoning_effort as 'low' | 'medium' | 'high' 
-      }),
-      ...(modelConfig.verbosity && { verbosity: modelConfig.verbosity }),
-      ...(modelConfig.service_tier && { service_tier: modelConfig.service_tier }),
       response_format: { type: 'json_object' },
     });
     

@@ -21,7 +21,7 @@ npm install
 
 ```
 OPENAI_API_KEY=your_api_key_here
-OPENAI_MODEL=gpt-5.1
+OPENAI_MODEL=gpt-5-mini
 ```
 
 Опционально можно настроить:
@@ -29,6 +29,8 @@ OPENAI_MODEL=gpt-5.1
 OPENAI_REASONING_EFFORT=medium  # none, low, medium, high (когда будет поддержка в SDK)
 OPENAI_VERBOSITY=medium          # low, medium, high (когда будет поддержка в SDK)
 ```
+
+По умолчанию для продакшена используйте `gpt-5-mini`, а более дорогие модели включайте точечно через переменные окружения для сложных кейсов.
 
 ## Запуск
 

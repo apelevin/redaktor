@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { getIndex } from './client';
-import { createEmbedding } from '@/lib/openai/embeddings';
+import { createEmbedding, createEmbeddings } from '@/lib/openai/embeddings';
 import { CLAUSE_THRESHOLD } from './constants';
 import type { Clause, ClauseSearchResult, Section, ClauseMetadata } from '@/types/document';
 
@@ -44,6 +44,8 @@ export interface ClauseSearchParams {
   current_section: string;
   style?: string;
   qa_context?: Array<{ question: string; answer: string }>;
+  instructionId?: string; // Опционально: фильтр по ID инструкции
+  useCache?: boolean;
 }
 
 export async function searchClause(
@@ -57,7 +59,7 @@ export async function searchClause(
     const queryText = `Тип: ${params.document_type}. ${styleText}B2B, РФ.\nНужна клауза для раздела: "${params.current_section}".`;
     
     // Создаем эмбеддинг для запроса
-    const queryVector = await createEmbedding(queryText);
+    const queryVector = await createEmbedding(queryText, { useCache: params.useCache });
     
     // Формируем фильтр
     const filter: any = {
@@ -67,6 +69,11 @@ export async function searchClause(
     
     if (params.style) {
       filter.style = { $eq: params.style };
+    }
+    
+    // Если указан instructionId, фильтруем по нему
+    if (params.instructionId) {
+      filter.instructionId = { $eq: params.instructionId };
     }
     
     const queryResponse = await index.query({
@@ -120,7 +127,38 @@ export interface UpsertClauseParams {
   clause: Clause;
   skeleton: Section[];
   source_doc_id?: string;
+  instructionId?: string; // ID инструкции, к которой относится формулировка
   contract_variables?: Record<string, any>;
+  useCache?: boolean;
+}
+
+function buildClauseMetadata(
+  params: UpsertClauseParams,
+  section_path: string,
+  source_doc_id: string
+): ClauseMetadata & { content: string } {
+  const metadata: ClauseMetadata = {
+    document_type: params.document_type,
+    style: params.style || 'default',
+    section_path,
+    source_doc_id,
+    instructionId: params.instructionId,
+    approved: true,
+    quality_score: 0.0,
+  };
+
+  if (params.contract_variables) {
+    Object.entries(params.contract_variables).forEach(([key, value]) => {
+      if (typeof value === 'string' || typeof value === 'number') {
+        metadata[key] = value;
+      }
+    });
+  }
+
+  return {
+    ...metadata,
+    content: params.clause.content,
+  };
 }
 
 /**
@@ -148,34 +186,9 @@ export async function upsertClause(
     );
     
     // Создаем эмбеддинг
-    const vector = await createEmbedding(embeddingText);
+    const vector = await createEmbedding(embeddingText, { useCache: params.useCache });
     
-    // Формируем базовые метаданные
-    const metadata: ClauseMetadata = {
-      document_type: params.document_type,
-      style: params.style || 'default',
-      section_path,
-      source_doc_id,
-      approved: true,
-      quality_score: 0.0,
-    };
-    
-    // Добавляем опциональные переменные из contract_variables
-    if (params.contract_variables) {
-      // Извлекаем релевантные переменные (например, penalty_rate, penalty_cap)
-      // Можно добавить логику для извлечения конкретных переменных
-      Object.entries(params.contract_variables).forEach(([key, value]) => {
-        if (typeof value === 'string' || typeof value === 'number') {
-          metadata[key] = value;
-        }
-      });
-    }
-    
-    // Сохраняем полный текст клаузы в метаданных
-    const fullMetadata: any = {
-      ...metadata,
-      content: params.clause.content,
-    };
+    const fullMetadata = buildClauseMetadata(params, section_path, source_doc_id);
     
     // Upsert в Pinecone
     await index.upsert([
@@ -192,6 +205,143 @@ export async function upsertClause(
   } catch (error) {
     console.error('Error upserting clause:', error);
     throw error;
+  }
+}
+
+export async function upsertClausesBatch(
+  clauses: UpsertClauseParams[],
+  options?: { batchSize?: number; useCache?: boolean }
+): Promise<Array<{ id: string }>> {
+  if (clauses.length === 0) {
+    return [];
+  }
+
+  try {
+    const index = await getIndex(CLAUSES_INDEX);
+    const batchSize = options?.batchSize ?? 100;
+
+    const prepared = clauses.map(params => {
+      const section_path = findSectionPath(params.skeleton, params.clause.sectionId) || params.clause.sectionId;
+      const clause_id = params.clause.id || `clause_${randomUUID()}`;
+      const source_doc_id = params.source_doc_id || `doc_${randomUUID()}`;
+      const embeddingText = formatClauseText(
+        params.document_type,
+        params.style,
+        section_path,
+        params.clause.content
+      );
+
+      return {
+        params,
+        section_path,
+        clause_id,
+        source_doc_id,
+        embeddingText,
+      };
+    });
+
+    const vectors = await createEmbeddings(
+      prepared.map(item => item.embeddingText),
+      { useCache: options?.useCache }
+    );
+
+    const items = prepared.map((item, index) => ({
+      id: item.clause_id,
+      values: vectors[index],
+      metadata: buildClauseMetadata(item.params, item.section_path, item.source_doc_id),
+    }));
+
+    for (let i = 0; i < items.length; i += batchSize) {
+      const batch = items.slice(i, i + batchSize);
+      await index.upsert(batch);
+    }
+
+    return items.map(item => ({ id: item.id }));
+  } catch (error) {
+    console.error('Error upserting clauses batch:', error);
+    throw error;
+  }
+}
+
+/**
+ * Находит все формулировки, связанные с конкретной инструкцией
+ * Используется после выбора инструкции для получения связанных формулировок
+ */
+export async function findClausesByInstructionId(
+  instructionId: string,
+  options?: {
+    document_type?: string;
+    style?: string;
+    topK?: number;
+  }
+): Promise<Array<{
+  id: string;
+  clause: Clause;
+  metadata: any;
+  score?: number;
+}>> {
+  try {
+    const index = await getIndex(CLAUSES_INDEX);
+    
+    // Формируем фильтр по instructionId
+    const filter: any = {
+      instructionId: { $eq: instructionId },
+      approved: { $eq: true },
+    };
+    
+    // Дополнительные фильтры, если указаны
+    if (options?.document_type) {
+      filter.document_type = { $eq: options.document_type };
+    }
+    
+    if (options?.style) {
+      filter.style = { $eq: options.style };
+    }
+    
+    // Используем query с минимальным вектором-заглушкой для фильтрации по метаданным
+    // Размерность должна соответствовать используемой модели embedding
+    const EMBEDDING_DIMENSION = 1024; // text-embedding-3-small
+    const queryResponse = await index.query({
+      vector: new Array(EMBEDDING_DIMENSION).fill(0), // Заглушка вектора
+      topK: options?.topK ?? 100,
+      includeMetadata: true,
+      filter,
+    });
+    
+    const results: Array<{
+      id: string;
+      clause: Clause;
+      metadata: any;
+      score?: number;
+    }> = [];
+    
+    if (queryResponse.matches) {
+      for (const match of queryResponse.matches) {
+        const metadata = match.metadata;
+        const clause: Clause = {
+          id: match.id || `clause-${Date.now()}`,
+          sectionId: metadata?.section_path as string || '',
+          content: metadata?.content as string || '',
+          source: 'rag',
+          metadata: {
+            sourceType: metadata?.sourceType as 'template' | 'law' | 'case',
+            sourceReference: metadata?.sourceReference as string,
+          },
+        };
+        
+        results.push({
+          id: match.id || '',
+          clause,
+          metadata,
+          score: match.score,
+        });
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Error finding clauses by instruction ID:', error);
+    return [];
   }
 }
 
