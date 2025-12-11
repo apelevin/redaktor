@@ -1,6 +1,6 @@
 import { getOpenAIClient } from './client';
 import { loadAndRenderPrompt } from '@/lib/utils/prompt-loader';
-import { buildChatCompletionParams, getModelConfig } from './models';
+import { getModelConfig } from './models';
 import type { CompletionState, CompletionMessage } from '@/types/completion';
 import type { Question } from '@/types/question';
 import type { TokenUsage } from '@/lib/utils/cost-calculator';
@@ -39,7 +39,7 @@ export async function generateCompletionMessage(
     const modelConfig = getModelConfig('context_completion');
     
     const response = await client.chat.completions.create({
-      ...buildChatCompletionParams(modelConfig),
+      model: modelConfig.model,
       messages: [
         {
           role: 'system',
@@ -51,6 +51,11 @@ export async function generateCompletionMessage(
         },
       ],
       response_format: { type: 'json_object' },
+      ...(modelConfig.reasoning_effort && modelConfig.reasoning_effort !== 'none' && { 
+        reasoning_effort: modelConfig.reasoning_effort as 'low' | 'medium' | 'high' 
+      }),
+      ...(modelConfig.verbosity && { verbosity: modelConfig.verbosity }),
+      ...(modelConfig.service_tier && { service_tier: modelConfig.service_tier }),
     });
 
     const usage: TokenUsage | undefined = response.usage ? {
