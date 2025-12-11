@@ -22,8 +22,14 @@ export async function POST(request: NextRequest) {
     // Execute pipeline step
     const result = await executePipelineStep(body);
 
+    // Extract cost and tokens from agent state
+    const totalCost = result.state.internalData.totalCost as number | undefined;
+    const totalTokens = result.state.internalData.totalTokens as number | undefined;
+
     const response: AgentStepResponse = {
       result,
+      totalCost,
+      totalTokens,
     };
 
     return NextResponse.json(response);

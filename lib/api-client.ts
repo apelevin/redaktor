@@ -11,6 +11,11 @@ import type {
   LegalDocument,
 } from "./types";
 
+export interface AgentStepResponseWithCost extends AgentStepResult {
+  totalCost?: number;
+  totalTokens?: number;
+}
+
 export class AgentAPIClient {
   private baseUrl: string;
 
@@ -20,7 +25,7 @@ export class AgentAPIClient {
 
   async step(
     request: AgentStepRequest
-  ): Promise<AgentStepResult> {
+  ): Promise<AgentStepResponseWithCost> {
     try {
       const response = await fetch(this.baseUrl, {
         method: "POST",
@@ -36,7 +41,11 @@ export class AgentAPIClient {
       }
 
       const data: AgentStepResponse = await response.json();
-      return data.result;
+      return {
+        ...data.result,
+        totalCost: data.totalCost,
+        totalTokens: data.totalTokens,
+      };
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Failed to call agent step: ${error.message}`);

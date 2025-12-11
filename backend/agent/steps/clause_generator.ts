@@ -36,20 +36,29 @@ export async function clauseGenerator(
 
   const llm = getOpenRouterClient();
   const clauses: ClauseDraft[] = [];
+  
+  // Initialize cost tracking if not exists
+  if (!agentState.internalData.totalCost) {
+    agentState.internalData.totalCost = 0;
+  }
+  if (!agentState.internalData.totalTokens) {
+    agentState.internalData.totalTokens = 0;
+  }
 
   // Generate clause for each requirement
   for (const requirement of requirements) {
     const section = skeleton.sections.find((s) => s.id === requirement.sectionId);
     if (!section) continue;
 
-    try {
-      const clauseText = await generateClauseText(
-        llm,
-        requirement,
-        section,
-        stylePreset,
-        mission
-      );
+      try {
+        const clauseText = await generateClauseText(
+          llm,
+          requirement,
+          section,
+          stylePreset,
+          mission,
+          agentState
+        );
 
       const clause: ClauseDraft = {
         id: `clause-${section.id}-${Date.now()}`,
@@ -138,7 +147,8 @@ async function generateClauseText(
   requirement: ClauseRequirement,
   section: any,
   stylePreset: StylePreset,
-  mission: any
+  mission: any,
+  agentState: AgentState
 ): Promise<string> {
   const systemPrompt = `Ты - эксперт по юридическим документам. Твоя задача - написать текст пункта для юридического документа.
 
@@ -161,11 +171,17 @@ ${requirement.riskNotes ? `- Примечания о рисках: ${requirement
 
   const userPrompt = `Напиши текст пункта для раздела "${section.title}" согласно требованиям выше.`;
 
-  const response = await llm.chat([
+  const result = await llm.chat([
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt },
   ]);
 
-  return response.trim();
+  // Update cost and tokens in agent state
+  if (result.usage) {
+    agentState.internalData.totalCost = (agentState.internalData.totalCost || 0) + (result.usage.cost || 0);
+    agentState.internalData.totalTokens = (agentState.internalData.totalTokens || 0) + result.usage.totalTokens;
+  }
+
+  return result.content.trim();
 }
 

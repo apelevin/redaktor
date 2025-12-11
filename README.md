@@ -158,10 +158,17 @@ export const YOUR_TYPE_CHECKLIST: DocumentChecklist = {
 
 ### Настройка LLM модели
 
-По умолчанию используется `anthropic/claude-3.5-sonnet`. Чтобы изменить:
+По умолчанию используется **Auto Model Selection** (`openrouter/auto`), который автоматически выбирает лучшую модель для каждого промпта. Это позволяет оптимизировать стоимость и качество ответов.
 
-1. Обновите `defaultModel` в `backend/llm/openrouter.ts`
+Чтобы использовать конкретную модель вместо auto-selection:
+
+1. Добавьте в `.env.local`:
+   ```
+   OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
+   ```
 2. Или передайте `model` в конфигурацию при вызове `chat()`
+
+Доступные модели: см. [OpenRouter Models](https://openrouter.ai/models)
 
 ## Лицензия
 

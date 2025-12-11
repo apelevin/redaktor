@@ -1,5 +1,5 @@
-// Document types
-export type DocumentType = "NDA" | "SaaS_MSA" | "SERVICE_AGREEMENT" | "PRIVACY_POLICY" | "OTHER";
+// Document types - теперь это свободная строка, определяется LLM динамически
+export type DocumentType = string;
 
 export type Jurisdiction = "RU" | "US" | "EU" | "UK" | "OTHER";
 
@@ -156,6 +156,8 @@ export interface UIState {
   chatMessages: ChatMessage[];
   isLoading: boolean;
   error?: string;
+  totalCost?: number; // Total cost in USD
+  totalTokens?: number; // Total tokens used
 }
 
 // API request/response types
@@ -168,5 +170,7 @@ export interface AgentStepRequest {
 
 export interface AgentStepResponse {
   result: AgentStepResult;
+  totalCost?: number; // Total cost in USD
+  totalTokens?: number; // Total tokens used
 }
 

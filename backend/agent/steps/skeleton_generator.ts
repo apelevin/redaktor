@@ -10,17 +10,26 @@ import type {
   DocumentSkeleton,
   DocumentSection,
   ChatMessage,
+  Issue,
 } from "@/lib/types";
+import { getOpenRouterClient } from "@/backend/llm/openrouter";
 import { updateAgentStateData, updateAgentStateStep } from "../state";
+
+interface SkeletonResponse {
+  sections: Array<{
+    title: string;
+    order: number;
+  }>;
+}
 
 export async function skeletonGenerator(
   agentState: AgentState,
   document: LegalDocument | null
 ): Promise<AgentStepResult> {
   const mission = agentState.internalData.mission as
-    | { documentType: string; jurisdiction: string }
+    | { documentType: string; jurisdiction: string; businessContext?: string }
     | undefined;
-  const issues = agentState.internalData.issues as any[] | undefined;
+  const issues = agentState.internalData.issues as Issue[] | undefined;
 
   if (!mission) {
     throw new Error(
@@ -34,177 +43,92 @@ export async function skeletonGenerator(
     );
   }
 
-  // Generate skeleton based on document type and jurisdiction
-  const skeleton = generateSkeletonForType(mission.documentType, mission.jurisdiction, issues);
-
-  // Update state
-  const updatedState = updateAgentStateData(agentState, { skeleton });
-  // Don't change step here - let pipeline handle it
-  // const updatedStateWithStep = updateAgentStateStep(
-  //   updatedState,
-  //   "clause_requirements_generator"
-  // );
-
-  const chatMessage: ChatMessage = {
-    id: `msg-${Date.now()}`,
-    role: "assistant",
-    content: `Создал структуру документа из ${skeleton.sections.length} разделов. Определяю требования к каждому пункту...`,
-    timestamp: new Date(),
-  };
-
-  return {
-    type: "continue",
-    state: updatedState, // Return state with current step, pipeline will advance it
-    chatMessages: [chatMessage],
-  };
-}
-
-function generateSkeletonForType(
-  documentType: string,
-  jurisdiction: string,
-  issues: any[]
-): DocumentSkeleton {
-  const sections: DocumentSection[] = [];
-  let order = 1;
-
-  // Base sections for different document types
-  if (documentType === "NDA") {
-    sections.push({
-      id: `section-${order++}`,
-      title: "Определения",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Обязательства по конфиденциальности",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Исключения",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Срок действия",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-
-    // Add optional sections based on issues
-    if (issues.some((i) => i.category === "Non-Solicit")) {
-      sections.push({
-        id: `section-${order++}`,
-        title: "Запрет переманивания сотрудников",
-        order: sections.length + 1,
-        clauseIds: [],
-      });
-    }
-    if (issues.some((i) => i.category === "Non-Compete")) {
-      sections.push({
-        id: `section-${order++}`,
-        title: "Запрет конкуренции",
-        order: sections.length + 1,
-        clauseIds: [],
-      });
-    }
-    if (issues.some((i) => i.category === "Audit Rights")) {
-      sections.push({
-        id: `section-${order++}`,
-        title: "Права на аудит",
-        order: sections.length + 1,
-        clauseIds: [],
-      });
-    }
-  } else if (documentType === "SaaS_MSA") {
-    sections.push({
-      id: `section-${order++}`,
-      title: "Определения",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Предмет договора",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Права и обязанности сторон",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Ограничение ответственности",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Интеллектуальная собственность",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Срок действия и расторжение",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Разрешение споров",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-
-    if (issues.some((i) => i.category === "SLA")) {
-      sections.push({
-        id: `section-${order++}`,
-        title: "Уровни обслуживания",
-        order: sections.length + 1,
-        clauseIds: [],
-      });
-    }
-  } else {
-    // Generic structure
-    sections.push({
-      id: `section-${order++}`,
-      title: "Определения",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Предмет договора",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Права и обязанности сторон",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Срок действия и расторжение",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
-    sections.push({
-      id: `section-${order++}`,
-      title: "Разное",
-      order: sections.length + 1,
-      clauseIds: [],
-    });
+  const llm = getOpenRouterClient();
+  
+  // Initialize cost tracking if not exists
+  if (!agentState.internalData.totalCost) {
+    agentState.internalData.totalCost = 0;
+  }
+  if (!agentState.internalData.totalTokens) {
+    agentState.internalData.totalTokens = 0;
   }
 
-  return { sections };
+  // Generate skeleton using LLM
+  const systemPrompt = `Ты - эксперт по юридическим документам. Твоя задача - создать структуру документа (список разделов).
+
+Верни JSON объект со следующей структурой:
+{
+  "sections": [
+    {
+      "title": "название раздела на русском языке",
+      "order": номер_порядка (начиная с 1)
+    }
+  ]
+}
+
+Важно:
+- Создай логичную структуру документа с разделами, которые покрывают все указанные юридические вопросы
+- Названия разделов должны быть понятными и отражать их содержание
+- Порядок разделов должен быть логичным (обычно: общие положения, предмет, права и обязанности, оплата/условия, ответственность, расторжение, заключительные положения)
+- Учитывай тип документа и юрисдикцию`;
+
+  const issuesList = issues.map(i => `- ${i.category}: ${i.description} (${i.severity})`).join("\n");
+  
+  const userPrompt = `Создай структуру документа:
+- Тип документа: ${mission.documentType}
+- Юрисдикция: ${mission.jurisdiction}
+${mission.businessContext ? `- Контекст: ${mission.businessContext}` : ""}
+
+Юридические вопросы, которые должны быть покрыты:
+${issuesList}
+
+Создай список разделов документа, которые логично покрывают все эти вопросы.`;
+
+  try {
+    console.log("[skeleton_generator] Calling LLM to generate skeleton for:", mission.documentType);
+    const result = await llm.chatJSON<SkeletonResponse>([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
+    
+    if (result.usage) {
+      agentState.internalData.totalCost = (agentState.internalData.totalCost || 0) + (result.usage.cost || 0);
+      agentState.internalData.totalTokens = (agentState.internalData.totalTokens || 0) + result.usage.totalTokens;
+    }
+
+    const response = result.data;
+    
+    // Convert to DocumentSection format
+    const sections: DocumentSection[] = response.sections.map((section, idx) => ({
+      id: `section-${idx + 1}`,
+      title: section.title,
+      order: section.order || idx + 1,
+      clauseIds: [],
+    }));
+
+    const skeleton: DocumentSkeleton = { sections };
+    
+    console.log("[skeleton_generator] Generated skeleton with", sections.length, "sections");
+
+    // Update state
+    const updatedState = updateAgentStateData(agentState, { skeleton });
+    // Don't change step here - let pipeline handle it
+
+    const chatMessage: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: "assistant",
+      content: `Создал структуру документа из ${skeleton.sections.length} разделов. Определяю требования к каждому пункту...`,
+      timestamp: new Date(),
+    };
+
+    return {
+      type: "continue",
+      state: updatedState, // Return state with current step, pipeline will advance it
+      chatMessages: [chatMessage],
+    };
+  } catch (error) {
+    console.error("[skeleton_generator] Error generating skeleton:", error);
+    throw new Error(`Failed to generate skeleton: ${error instanceof Error ? error.message : "Unknown error"}`);
+  }
 }
 

@@ -78,6 +78,42 @@ const baseIssues: Record<string, Omit<Issue, "id">> = {
     severity: "low",
     required: false,
   },
+  salary: {
+    category: "Salary",
+    description: "Условия оплаты труда",
+    severity: "high",
+    required: true,
+  },
+  working_hours: {
+    category: "Working Hours",
+    description: "Режим работы и отдыха",
+    severity: "high",
+    required: true,
+  },
+  vacation: {
+    category: "Vacation",
+    description: "Отпуска и выходные дни",
+    severity: "medium",
+    required: true,
+  },
+  job_duties: {
+    category: "Job Duties",
+    description: "Трудовые обязанности работника",
+    severity: "high",
+    required: true,
+  },
+  probation: {
+    category: "Probation",
+    description: "Испытательный срок",
+    severity: "medium",
+    required: false,
+  },
+  non_compete_employment: {
+    category: "Non-Compete",
+    description: "Ограничения на работу у конкурентов после увольнения",
+    severity: "medium",
+    required: false,
+  },
 };
 
 function createIssue(key: string, id: string): Issue {
@@ -133,6 +169,25 @@ export const SERVICE_AGREEMENT_CHECKLIST: DocumentChecklist = {
   ],
 };
 
+export const EMPLOYMENT_CONTRACT_CHECKLIST: DocumentChecklist = {
+  documentType: "EMPLOYMENT_CONTRACT",
+  requiredIssues: [
+    createIssue("job_duties", "employment-job-duties"),
+    createIssue("salary", "employment-salary"),
+    createIssue("working_hours", "employment-working-hours"),
+    createIssue("vacation", "employment-vacation"),
+    createIssue("term", "employment-term"),
+    createIssue("termination", "employment-termination"),
+    createIssue("dispute_resolution", "employment-dispute"),
+  ],
+  optionalIssues: [
+    createIssue("probation", "employment-probation"),
+    createIssue("non_compete_employment", "employment-non-compete"),
+    createIssue("confidentiality", "employment-confidentiality"),
+    createIssue("liability", "employment-liability"),
+  ],
+};
+
 export function getChecklist(documentType: string): DocumentChecklist | null {
   switch (documentType) {
     case "NDA":
@@ -141,6 +196,8 @@ export function getChecklist(documentType: string): DocumentChecklist | null {
       return SAAS_MSA_CHECKLIST;
     case "SERVICE_AGREEMENT":
       return SERVICE_AGREEMENT_CHECKLIST;
+    case "EMPLOYMENT_CONTRACT":
+      return EMPLOYMENT_CONTRACT_CHECKLIST;
     default:
       return null;
   }

@@ -29,6 +29,30 @@ export async function clauseRequirementsGenerator(
     throw new Error("Mission, skeleton, or issues not found in agent state");
   }
 
+  // First, check if we have an answer about liability cap and process it
+  const lastAnswer = agentState.internalData.lastAnswer as
+    | { selectedOptionIds?: string[]; questionId?: string }
+    | undefined;
+
+  console.log(`[clause_requirements_generator] Checking for liability cap answer. lastAnswer:`, lastAnswer ? "exists" : "none");
+  console.log(`[clause_requirements_generator] liabilityCapDecided:`, agentState.internalData.liabilityCapDecided);
+
+  // Process liability cap answer if we have one
+  if (lastAnswer?.selectedOptionIds?.[0] && !agentState.internalData.liabilityCapDecided) {
+    const capChoice = lastAnswer.selectedOptionIds[0];
+    console.log(`[clause_requirements_generator] Processing liability cap answer: ${capChoice}`);
+    // Update state immediately with the answer
+    agentState = updateAgentStateData(agentState, {
+      liabilityCap: capChoice,
+      liabilityCapDecided: true,
+      // Preserve existing data
+      ...(agentState.internalData.mission ? { mission: agentState.internalData.mission } : {}),
+      ...(agentState.internalData.issues ? { issues: agentState.internalData.issues } : {}),
+      ...(agentState.internalData.skeleton ? { skeleton: agentState.internalData.skeleton } : {}),
+    });
+    console.log(`[clause_requirements_generator] Updated state, liabilityCapDecided: ${agentState.internalData.liabilityCapDecided}`);
+  }
+
   // Generate requirements for each section
   const requirements: ClauseRequirement[] = [];
   
@@ -107,22 +131,17 @@ export async function clauseRequirementsGenerator(
     requirements.push(requirement);
   }
 
-  // If we have an answer about liability cap, process it
-  const lastAnswer = agentState.internalData.lastAnswer as
-    | { selectedOptionIds?: string[] }
-    | undefined;
-
-  if (lastAnswer?.selectedOptionIds?.[0]) {
-    const capChoice = lastAnswer.selectedOptionIds[0];
-    agentState.internalData.liabilityCap = capChoice;
-    agentState.internalData.liabilityCapDecided = true;
-  }
-
-  // Update state
+  // Update state with requirements and preserve liability cap decision
   const updatedState = updateAgentStateData(agentState, {
     clauseRequirements: requirements,
-    liabilityCapDecided: true,
+    // Preserve liabilityCapDecided if it was set
+    ...(agentState.internalData.liabilityCapDecided ? {
+      liabilityCapDecided: true,
+      liabilityCap: agentState.internalData.liabilityCap,
+    } : {}),
   });
+  
+  console.log(`[clause_requirements_generator] Updated state, liabilityCapDecided: ${updatedState.internalData.liabilityCapDecided}`);
   // Don't change step here - let pipeline handle it
   // const updatedStateWithStep = updateAgentStateStep(
   //   updatedState,

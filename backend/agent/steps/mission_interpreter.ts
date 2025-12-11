@@ -36,7 +36,7 @@ export async function missionInterpreter(
 
 Верни JSON объект со следующей структурой:
 {
-  "documentType": "NDA" | "SaaS_MSA" | "SERVICE_AGREEMENT" | "PRIVACY_POLICY" | "OTHER",
+  "documentType": "название типа документа на русском языке (например: 'трудовой договор', 'договор оказания услуг', 'NDA', 'договор подряда', 'лицензионное соглашение' и т.д.)",
   "jurisdiction": "RU" | "US" | "EU" | "UK" | "OTHER",
   "language": "ru" | "en",
   "partyA": "название стороны A или null",
@@ -46,19 +46,37 @@ export async function missionInterpreter(
   "riskTolerance": "low" | "medium" | "high" или null
 }
 
-Если какая-то информация не указана явно, используй null. Для documentType и jurisdiction используй "OTHER" только если действительно не можешь определить.`;
+Важно: 
+- documentType должен быть понятным названием типа документа на русском языке (например: "трудовой договор", "договор оказания услуг", "договор подряда", "лицензионное соглашение", "NDA", "договор аренды" и т.д.)
+- Используй точное и понятное название, которое отражает суть документа
+- Если какая-то информация не указана явно, используй null. Для jurisdiction используй "OTHER" только если действительно не можешь определить.`;
 
   try {
     console.log("[mission_interpreter] Calling LLM with message:", userMessage);
-    const response = await llm.chatJSON<Partial<LegalDocumentMission>>([
+    
+    // Initialize cost tracking if not exists
+    if (!agentState.internalData.totalCost) {
+      agentState.internalData.totalCost = 0;
+    }
+    if (!agentState.internalData.totalTokens) {
+      agentState.internalData.totalTokens = 0;
+    }
+    
+    const result = await llm.chatJSON<Partial<LegalDocumentMission>>([
       { role: "system", content: systemPrompt },
       { role: "user", content: userMessage },
     ]);
+    const response = result.data;
+    if (result.usage) {
+      // Store usage in agent state
+      agentState.internalData.totalCost = (agentState.internalData.totalCost || 0) + (result.usage.cost || 0);
+      agentState.internalData.totalTokens = (agentState.internalData.totalTokens || 0) + result.usage.totalTokens;
+    }
     console.log("[mission_interpreter] LLM response:", JSON.stringify(response, null, 2));
 
     // Check if we have enough information
     const missingFields: string[] = [];
-    if (!response.documentType || response.documentType === "OTHER") {
+    if (!response.documentType || response.documentType.trim() === "") {
       missingFields.push("тип документа");
     }
     if (!response.jurisdiction || response.jurisdiction === "OTHER") {

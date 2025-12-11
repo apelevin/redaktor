@@ -20,14 +20,24 @@ export default function Home() {
     chatMessages: [],
     isLoading: false,
     error: undefined,
+    totalCost: 0,
+    totalTokens: 0,
   });
 
-  const handleAgentResult = useCallback((result: AgentStepResult) => {
+  const handleAgentResult = useCallback((result: any) => {
     setState((prev) => {
       const newState = { ...prev };
       
       // Update agent state
       newState.agentState = result.state;
+      
+      // Update cost and tokens if provided
+      if (result.totalCost !== undefined) {
+        newState.totalCost = result.totalCost;
+      }
+      if (result.totalTokens !== undefined) {
+        newState.totalTokens = result.totalTokens;
+      }
       
       // Add chat messages
       newState.chatMessages = [
@@ -136,6 +146,18 @@ export default function Home() {
 
   return (
     <main className="main-container">
+      {/* Cost display in top right */}
+      {(state.totalCost !== undefined || state.totalTokens !== undefined) && (
+        <div className="cost-display">
+          {state.totalCost !== undefined && state.totalCost > 0 && (
+            <span className="cost-amount">${state.totalCost.toFixed(4)}</span>
+          )}
+          {state.totalTokens !== undefined && state.totalTokens > 0 && (
+            <span className="token-count">{state.totalTokens.toLocaleString()} токенов</span>
+          )}
+        </div>
+      )}
+      
       {state.error && (
         <div className="error-banner">
           <span>Ошибка: {state.error}</span>

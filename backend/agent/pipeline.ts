@@ -54,7 +54,10 @@ export async function executePipelineStep(
   // Handle user answer if provided
   if (request.userAnswer && agentState) {
     // Store the answer in agent state
+    console.log(`[pipeline] Received user answer for question: ${request.userAnswer.questionId}`);
     agentState.internalData.lastAnswer = request.userAnswer;
+    // Save state immediately with the answer
+    storage.saveAgentState(agentState);
   }
 
   // Apply document changes if provided
@@ -101,6 +104,7 @@ export async function executePipelineStep(
     // Save updated state and document
     // Make sure we save the complete state with all internalData
     console.log(`[pipeline] Saving state after step ${currentStep}, internalData keys:`, Object.keys(result.state.internalData));
+    console.log(`[pipeline] Total cost so far: $${result.state.internalData.totalCost || 0}, tokens: ${result.state.internalData.totalTokens || 0}`);
     storage.saveAgentState(result.state);
     
     // Verify the state was saved correctly
