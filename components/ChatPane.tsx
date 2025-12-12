@@ -1,14 +1,17 @@
 "use client";
 
 import React from "react";
-import type { ChatMessage, UserQuestion, UserAnswer } from "@/lib/types";
+import type { ChatMessage, UserQuestion, UserAnswer, ReasoningLevel } from "@/lib/types";
 import ChatInput from "./ChatInput";
 import QuestionForm from "./QuestionForm";
+import ReasoningLevelSelector from "./ReasoningLevelSelector";
 
 interface ChatPaneProps {
   messages: ChatMessage[];
   pendingQuestion?: UserQuestion;
   isLoading: boolean;
+  reasoningLevel: ReasoningLevel | null;
+  onReasoningLevelChange: (level: ReasoningLevel) => void;
   onSendMessage: (message: string) => void;
   onAnswerQuestion: (answer: UserAnswer) => void;
 }
@@ -17,6 +20,8 @@ export default function ChatPane({
   messages,
   pendingQuestion,
   isLoading,
+  reasoningLevel,
+  onReasoningLevelChange,
   onSendMessage,
   onAnswerQuestion,
 }: ChatPaneProps) {
@@ -67,11 +72,22 @@ export default function ChatPane({
 
       {!pendingQuestion && (
         <div className="chat-input-container">
-          <ChatInput
-            onSend={onSendMessage}
-            disabled={isLoading}
-            placeholder="Опишите задачу для агента..."
-          />
+          {reasoningLevel === null && messages.length === 0 && !isLoading ? (
+            <ReasoningLevelSelector
+              selectedLevel={reasoningLevel}
+              onSelect={onReasoningLevelChange}
+            />
+          ) : (
+            <ChatInput
+              onSend={onSendMessage}
+              disabled={isLoading || reasoningLevel === null}
+              placeholder={
+                reasoningLevel === null
+                  ? "Сначала выберите уровень проработки документа..."
+                  : "Опишите задачу для агента..."
+              }
+            />
+          )}
         </div>
       )}
     </div>

@@ -41,7 +41,7 @@ export default function DocumentPane({
             <>
               <div className="document-status">
                 <span className="status-badge">
-                  {document.mission.documentType}
+                  {document.profile.primaryPurpose}
                 </span>
               </div>
               <button

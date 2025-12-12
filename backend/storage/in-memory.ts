@@ -43,9 +43,26 @@ export class InMemoryStorage {
   // Agent state operations
   saveAgentState(state: AgentState): void {
     // Deep clone to ensure we save a complete copy
+    // PRO: Сохраняем все обязательные поля согласно archv2.md
     const stateToSave: AgentState = {
+      conversationId: state.conversationId,
       documentId: state.documentId,
+      plan: state.plan,
+      stepCursor: state.stepCursor,
       step: state.step,
+      // PRO: обязательные поля на верхнем уровне
+      sizePolicy: state.sizePolicy,
+      parties: state.parties,
+      decisions: state.decisions,
+      // PRO: опциональные поля на верхнем уровне
+      mission: state.mission,
+      profile: state.profile,
+      skeleton: state.skeleton,
+      clauseRequirements: state.clauseRequirements,
+      clauseDrafts: state.clauseDrafts,
+      highlightedSectionId: state.highlightedSectionId,
+      highlightedClauseId: state.highlightedClauseId,
+      // Внутренние данные
       internalData: JSON.parse(JSON.stringify(state.internalData)), // Deep clone
     };
     console.log(`[storage] Saving state for ${state.documentId}, step: ${state.step}, internalData keys:`, Object.keys(stateToSave.internalData));
@@ -59,9 +76,26 @@ export class InMemoryStorage {
       return undefined;
     }
     // Deep clone to ensure we return a copy, not a reference
-    const cloned = {
+    // PRO: Возвращаем полный AgentState со всеми обязательными полями согласно archv2.md
+    const cloned: AgentState = {
+      conversationId: state.conversationId,
       documentId: state.documentId,
+      plan: state.plan,
+      stepCursor: state.stepCursor,
       step: state.step,
+      // PRO: обязательные поля на верхнем уровне
+      sizePolicy: state.sizePolicy,
+      parties: state.parties,
+      decisions: state.decisions,
+      // PRO: опциональные поля на верхнем уровне
+      mission: state.mission,
+      profile: state.profile,
+      skeleton: state.skeleton,
+      clauseRequirements: state.clauseRequirements,
+      clauseDrafts: state.clauseDrafts,
+      highlightedSectionId: state.highlightedSectionId,
+      highlightedClauseId: state.highlightedClauseId,
+      // Внутренние данные
       internalData: JSON.parse(JSON.stringify(state.internalData)), // Deep clone
     };
     console.log(`[storage] Loaded state for ${documentId}, step: ${cloned.step}, internalData keys:`, Object.keys(cloned.internalData));

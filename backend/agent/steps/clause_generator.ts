@@ -12,6 +12,9 @@ import type {
   ClauseRequirement,
   StylePreset,
   ChatMessage,
+  DecisionsMap,
+  DocumentSizePolicy,
+  ContractParty,
 } from "@/lib/types";
 import { getOpenRouterClient } from "@/backend/llm/openrouter";
 import { updateAgentStateData, updateAgentStateStep, updateUsageStats } from "../state";
@@ -21,12 +24,15 @@ export async function clauseGenerator(
   agentState: AgentState,
   document: LegalDocument | null
 ): Promise<AgentStepResult> {
-  const mission = agentState.internalData.mission as any;
-  const skeleton = agentState.internalData.skeleton as DocumentSkeleton | undefined;
-  const requirements = agentState.internalData.clauseRequirements as
+  const mission = agentState.mission as any;
+  const skeleton = agentState.skeleton as DocumentSkeleton | undefined;
+  const requirements = agentState.clauseRequirements as
     | ClauseRequirement[]
     | undefined;
   const stylePreset = agentState.internalData.stylePreset as StylePreset | undefined;
+  const decisions = agentState.decisions; // обязательное поле на верхнем уровне
+  const sizePolicy = agentState.sizePolicy; // обязательное поле на верхнем уровне
+  const parties = agentState.parties; // обязательное поле на верхнем уровне
 
   if (!mission || !skeleton || !requirements || !stylePreset) {
     throw new Error(
@@ -41,14 +47,22 @@ export async function clauseGenerator(
   // Initialize document if it doesn't exist
   let currentDocument = document;
   if (!currentDocument) {
+    // PRO: Создаем документ с обязательными полями согласно archv2.md
     currentDocument = {
       id: agentState.documentId,
       mission: mission,
-      sections: skeleton.sections.map((s) => ({
-        ...s,
-        clauseIds: [],
-      })),
-      clauses: [],
+      profile: agentState.profile || {
+        primaryPurpose: "юридический документ",
+        legalDomains: [],
+        mandatoryBlocks: [],
+        optionalBlocks: [],
+        prohibitedPatterns: [],
+        riskPosture: "balanced",
+      },
+      skeleton: skeleton,
+      clauseRequirements: requirements || [],
+      clauseDrafts: [],
+      finalText: "",
       stylePreset: stylePreset,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -71,24 +85,56 @@ export async function clauseGenerator(
         agentState
       );
 
+      // PRO: Check if clause is locked by user (don't regenerate)
+      const existingClause = currentDocument?.clauseDrafts?.find(
+        (c) => c.requirementId === requirement.id && c.lockedByUser
+      );
+
+      if (existingClause && existingClause.lockedByUser) {
+        console.log(`[clause_generator] Skipping locked clause: ${requirement.id}`);
+        clauses.push({
+          ...existingClause,
+          order: clauses.length + 1,
+        });
+        continue;
+      }
+
       const clause: ClauseDraft = {
-        id: `clause-${section.id}-${Date.now()}-${clauses.length}`,
-        sectionId: section.id,
+        id: `clause-${requirement.id}-${Date.now()}-${clauses.length}`,
+        requirementId: requirement.id, // PRO: use requirementId
+        sectionId: section.id, // Legacy: for backward compatibility
         text: clauseText,
-        reasoningSummary: `Покрывает: ${requirement.relatedIssues.join(", ")}`,
+        reasoningSummary: `Покрывает: ${requirement.relatedIssues?.join(", ") || requirement.purpose}`,
         order: clauses.length + 1,
+        source: "model", // PRO: source
+        lockedByUser: false, // PRO: not locked
+        version: existingClause ? (existingClause.version || 0) + 1 : 1, // PRO: version
       };
 
       clauses.push(clause);
 
       // Save intermediate document after each clause is generated
+      // PRO: Обновляем clauseRequirementIds в секции согласно archv2.md
       currentDocument = {
         ...currentDocument,
-        clauses: [...clauses],
-        sections: skeleton.sections.map((s) => ({
-          ...s,
-          clauseIds: clauses.filter((c) => c.sectionId === s.id).map((c) => c.id),
-        })),
+        skeleton: {
+          ...currentDocument.skeleton,
+          sections: currentDocument.skeleton.sections.map((s) => {
+            if (s.id === section.id) {
+              // Добавляем requirementId в clauseRequirementIds, если его там еще нет
+              const requirementIds = s.clauseRequirementIds || [];
+              if (!requirementIds.includes(clause.requirementId)) {
+                return {
+                  ...s,
+                  clauseRequirementIds: [...requirementIds, clause.requirementId],
+                };
+              }
+              return s;
+            }
+            return s;
+          }),
+        },
+        clauseDrafts: clauses,
         updatedAt: new Date(),
       };
       storage.saveDocument(currentDocument);
@@ -97,21 +143,36 @@ export async function clauseGenerator(
       console.error(`Error generating clause for ${section.title}:`, error);
       // Create placeholder clause
       const placeholderClause: ClauseDraft = {
-        id: `clause-${section.id}-${Date.now()}-${clauses.length}`,
-        sectionId: section.id,
+        id: `clause-${requirement.id}-${Date.now()}-${clauses.length}`,
+        requirementId: requirement.id,
         text: `[Текст для раздела "${section.title}" будет сгенерирован]`,
         order: clauses.length + 1,
+        source: "model",
+        lockedByUser: false,
+        version: 1,
       };
       clauses.push(placeholderClause);
 
       // Save intermediate document even with placeholder
       currentDocument = {
         ...currentDocument,
-        clauses: [...clauses],
-        sections: skeleton.sections.map((s) => ({
-          ...s,
-          clauseIds: clauses.filter((c) => c.sectionId === s.id).map((c) => c.id),
-        })),
+        skeleton: {
+          ...currentDocument.skeleton,
+          sections: currentDocument.skeleton.sections.map((s) => {
+            if (s.id === section.id) {
+              const requirementIds = s.clauseRequirementIds || [];
+              if (!requirementIds.includes(placeholderClause.requirementId)) {
+                return {
+                  ...s,
+                  clauseRequirementIds: [...requirementIds, placeholderClause.requirementId],
+                };
+              }
+              return s;
+            }
+            return s;
+          }),
+        },
+        clauseDrafts: clauses,
         updatedAt: new Date(),
       };
       storage.saveDocument(currentDocument);
@@ -121,8 +182,10 @@ export async function clauseGenerator(
   // Document is already saved incrementally, just ensure it's up to date
   // (currentDocument was updated in the loop above)
 
-  // Update state
-  const updatedState = updateAgentStateData(agentState, {});
+  // Update state with clauses (на верхнем уровне согласно archv2.md)
+  const updatedState = updateAgentStateData(agentState, {
+    clauseDrafts: clauses,
+  });
   // Don't change step here - let pipeline handle it
   // const updatedStateWithStep = updateAgentStateStep(
   //   updatedState,
@@ -136,19 +199,23 @@ export async function clauseGenerator(
     timestamp: new Date(),
   };
 
-  return {
-    type: "continue",
-    state: updatedState, // Return state with current step, pipeline will advance it
-    documentPatch: {
-      id: currentDocument.id,
-      mission: currentDocument.mission,
-      clauses: clauses,
-      sections: currentDocument.sections,
-      stylePreset: currentDocument.stylePreset,
-      updatedAt: currentDocument.updatedAt,
-    },
-    chatMessages: [chatMessage],
-  };
+    return {
+      type: "continue",
+      state: updatedState, // Return state with current step, pipeline will advance it
+      documentPatch: {
+        id: currentDocument.id,
+        mission: currentDocument.mission,
+        // PRO: обязательные поля согласно archv2.md
+        profile: currentDocument.profile,
+        skeleton: currentDocument.skeleton,
+        clauseRequirements: currentDocument.clauseRequirements,
+        clauseDrafts: clauses,
+        finalText: currentDocument.finalText,
+        stylePreset: currentDocument.stylePreset,
+        updatedAt: currentDocument.updatedAt,
+      },
+      chatMessages: [chatMessage],
+    };
 }
 
 async function generateClauseText(
@@ -159,14 +226,40 @@ async function generateClauseText(
   mission: any,
   agentState: AgentState
 ): Promise<string> {
-  const systemPrompt = `Ты - эксперт по юридическим документам. Твоя задача - написать текст пункта для юридического документа.
+  const decisions = agentState.decisions; // обязательное поле на верхнем уровне
+  const sizePolicy = agentState.sizePolicy; // обязательное поле на верхнем уровне
+  const parties = agentState.parties; // обязательное поле на верхнем уровне
+
+  // PRO: Build decisions context
+  const decisionsContext = decisions
+    ? Object.entries(decisions)
+        .map(([key, record]) => `${key}: ${JSON.stringify(record.value)}`)
+        .join("\n")
+    : "";
+
+  // PRO: Build parties context
+  const partiesContext = parties
+    ? parties
+        .map((p) => `${p.displayName} (${p.legalName || "не указано"})`)
+        .join(", ")
+    : "";
+
+  const verbosity = sizePolicy?.verbosity || "medium";
+  const verbosityInstruction =
+    verbosity === "low"
+      ? "Кратко, только основные положения"
+      : verbosity === "high"
+      ? "Подробно, с детализацией и edge-cases"
+      : "Стандартный уровень детализации";
+
+  const systemPrompt = `Ты - эксперт по российскому праву. Твоя задача - написать текст пункта для юридического документа.
 
 Стиль документа:
 - Семейство: ${stylePreset.family}
 - Формальность: ${stylePreset.formality}
 - Длина предложений: ${stylePreset.sentenceLength}
-- Юрисдикция: ${mission.jurisdiction}
-- Тип документа: ${mission.documentType}
+- Юрисдикция: ${mission.jurisdiction?.join(", ") || "RU"}
+- Уровень детализации: ${verbosityInstruction}
 
 Напиши текст пункта для раздела "${section.title}".
 
@@ -175,6 +268,9 @@ async function generateClauseText(
 - Обязательные элементы: ${requirement.requiredElements.join(", ")}
 - Рекомендуемые элементы: ${requirement.recommendedElements.join(", ") || "нет"}
 ${requirement.riskNotes ? `- Примечания о рисках: ${requirement.riskNotes}` : ""}
+${decisionsContext ? `- Принятые решения:\n${decisionsContext}` : ""}
+${partiesContext ? `- Стороны договора: ${partiesContext}` : ""}
+${requirement.relatedDomains ? `- Правовые домены: ${requirement.relatedDomains.join(", ")}` : ""}
 
 ВАЖНО - Форматирование:
 - Каждый пронумерованный подпункт (например, 1.1.1., 1.1.2., 1.2.1. и т.д.) ДОЛЖЕН начинаться с новой строки
@@ -182,6 +278,10 @@ ${requirement.riskNotes ? `- Примечания о рисках: ${requirement
 - НЕ размещайте несколько подпунктов на одной строке
 - Если в пункте есть несколько определений или подпунктов, каждый должен быть на отдельной строке
 - Используйте правильную нумерацию: каждый новый подпункт начинается с новой строки
+
+ВАЖНО - Учет решений:
+- Используй принятые решения пользователя при формулировке текста
+- Если решение не принято, используй стандартную формулировку
 
 Верни только текст пункта, без дополнительных комментариев. Текст должен быть готов для использования в юридическом документе.`;
 

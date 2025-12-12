@@ -3,13 +3,48 @@
  * Utilities for managing AgentState
  */
 
-import type { AgentState } from "@/lib/types";
+import type { AgentState, PipelineStepId } from "@/lib/types";
 import type { OpenRouterUsage } from "@/backend/llm/openrouter";
+import { getSizePolicy } from "./rules/sizePolicy";
 
-export function createInitialAgentState(documentId: string): AgentState {
+/**
+ * Create initial agent state with PRO architecture (archv2.md)
+ * reasoningLevel опционален - будет установлен позже из UI или HITL согласно reasoning.md
+ */
+export function createInitialAgentState(
+  documentId: string,
+  conversationId: string,
+  reasoningLevel?: "basic" | "standard" | "professional"
+): AgentState {
+  // PRO: Default plan for pipeline execution
+  const defaultPlan: PipelineStepId[] = [
+    "mission_interpreter",
+    "profile_builder",
+    "party_details_collector",
+    "decision_collector",
+    "issue_spotter",
+    "skeleton_generator",
+    "clause_requirements_generator",
+    "style_planner",
+    "clause_generator",
+    "document_linter",
+  ];
+
+  // PRO: Initialize required fields according to archv2.md
+  // Используем переданный reasoningLevel или default "standard"
+  const finalReasoningLevel = reasoningLevel || "standard";
+  const sizePolicy = getSizePolicy(finalReasoningLevel);
+
   return {
+    conversationId,
     documentId,
-    step: "mission_interpreter",
+    plan: defaultPlan,
+    stepCursor: 0,
+    step: "mission_interpreter", // Legacy: for backward compatibility
+    // PRO: обязательные поля на верхнем уровне
+    sizePolicy,
+    parties: [],
+    decisions: {},
     internalData: {},
   };
 }
@@ -18,21 +53,76 @@ export function updateAgentStateStep(
   state: AgentState,
   step: string
 ): AgentState {
+  // Legacy: update step for backward compatibility
   return {
     ...state,
     step,
   };
 }
 
+/**
+ * Get current step from plan and cursor (PRO)
+ */
+export function getCurrentStepFromPlan(state: AgentState): string | null {
+  if (state.plan && state.plan.length > 0 && state.stepCursor >= 0) {
+    if (state.stepCursor < state.plan.length) {
+      return state.plan[state.stepCursor];
+    }
+  }
+  // Fallback to legacy step
+  return state.step || null;
+}
+
+/**
+ * Advance step cursor (PRO)
+ */
+export function advanceStepCursor(state: AgentState): AgentState {
+  if (state.plan && state.stepCursor < state.plan.length - 1) {
+    return {
+      ...state,
+      stepCursor: state.stepCursor + 1,
+      step: state.plan[state.stepCursor + 1], // Update legacy step too
+    };
+  }
+  return state;
+}
+
+/**
+ * Update agent state data - supports both top-level fields and internalData
+ */
 export function updateAgentStateData(
   state: AgentState,
-  data: Partial<AgentState["internalData"]>
+  data: Partial<AgentState["internalData"]> & Partial<Pick<AgentState, "mission" | "profile" | "skeleton" | "clauseRequirements" | "clauseDrafts" | "highlightedSectionId" | "highlightedClauseId" | "sizePolicy" | "parties" | "decisions">>
 ): AgentState {
+  // Separate top-level fields from internalData
+  const {
+    issues,
+    stylePreset,
+    totalCost,
+    totalTokens,
+    promptTokens,
+    completionTokens,
+    lastModel,
+    lastAnswer,
+    ...topLevelFields
+  } = data as any;
+
+  const internalDataUpdate: Partial<AgentState["internalData"]> = {};
+  if (issues !== undefined) internalDataUpdate.issues = issues;
+  if (stylePreset !== undefined) internalDataUpdate.stylePreset = stylePreset;
+  if (totalCost !== undefined) internalDataUpdate.totalCost = totalCost;
+  if (totalTokens !== undefined) internalDataUpdate.totalTokens = totalTokens;
+  if (promptTokens !== undefined) internalDataUpdate.promptTokens = promptTokens;
+  if (completionTokens !== undefined) internalDataUpdate.completionTokens = completionTokens;
+  if (lastModel !== undefined) internalDataUpdate.lastModel = lastModel;
+  if (lastAnswer !== undefined) internalDataUpdate.lastAnswer = lastAnswer;
+
   return {
     ...state,
+    ...topLevelFields,
     internalData: {
       ...state.internalData,
-      ...data,
+      ...internalDataUpdate,
     },
   };
 }
@@ -116,9 +206,25 @@ export function updateUsageStats(
   };
 }
 
+/**
+ * Get next step from plan (PRO)
+ */
+export function getNextStepFromPlan(state: AgentState): string | null {
+  if (state.plan && state.stepCursor < state.plan.length - 1) {
+    return state.plan[state.stepCursor + 1];
+  }
+  return null;
+}
+
+/**
+ * Legacy: get next step from hardcoded order
+ */
 export function getNextStep(currentStep: string): string | null {
   const stepOrder = [
     "mission_interpreter",
+    "profile_builder", // PRO: new step
+    "party_details_collector", // PRO: new step
+    "decision_collector", // PRO: new step
     "issue_spotter",
     "skeleton_generator",
     "clause_requirements_generator",

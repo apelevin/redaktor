@@ -10,6 +10,8 @@ import type {
   LegalDocumentMission,
   UserQuestion,
   ChatMessage,
+  ReasoningLevel,
+  DecisionRecord,
 } from "@/lib/types";
 import { getOpenRouterClient } from "@/backend/llm/openrouter";
 import { updateAgentStateData, updateAgentStateStep, updateUsageStats } from "../state";
@@ -21,46 +23,128 @@ export async function missionInterpreter(
 ): Promise<AgentStepResult> {
   const llm = getOpenRouterClient();
 
-  // If mission already exists, skip
-  if (agentState.internalData.mission) {
-    // Don't change step here - let pipeline handle it
+  // If mission already exists, check if reasoningLevel is set
+  const existingMission = agentState.mission as LegalDocumentMission | undefined;
+  if (existingMission) {
+    // If reasoningLevel is not set, ask for it
+    if (!existingMission.reasoningLevel) {
+      const question: UserQuestion = {
+        id: `question-reasoning-level-${Date.now()}`,
+        type: "single_choice",
+        title: "Уровень детализации документа",
+        text: "Выберите уровень детализации документа. Это определит его размер и глубину проработки.",
+        required: true,
+        legalImpact: "Уровень детализации влияет на объем документа, количество разделов и глубину проработки юридических вопросов.",
+        options: [
+          {
+            id: "basic",
+            label: "Базовый (1-2 страницы)",
+            description: "Минимум необходимых положений, краткая форма",
+            riskLevel: "low",
+            isRecommended: false,
+          },
+          {
+            id: "standard",
+            label: "Стандартный (3-5 страниц)",
+            description: "Рыночный уровень, стандартные защиты",
+            riskLevel: "low",
+            isRecommended: true,
+            isMarketStandard: true,
+          },
+          {
+            id: "professional",
+            label: "Профессиональный (6+ страниц)",
+            description: "Максимальная детализация, все edge-cases, расширенные защиты",
+            riskLevel: "low",
+            isRecommended: false,
+          },
+        ],
+      };
+
+      const chatMessage: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        role: "assistant",
+        content: "Выберите уровень детализации документа.",
+        timestamp: new Date(),
+      };
+
+      return {
+        type: "need_user_input",
+        state: agentState,
+        question,
+        chatMessages: [chatMessage],
+      };
+    }
+    // Mission exists and reasoningLevel is set, skip
     return {
       type: "continue",
-      state: agentState, // Return state with current step, pipeline will advance it
+      state: agentState,
       chatMessages: [],
     };
   }
 
-  // Check if we have a user answer from a previous question
+  // PRO: Получаем reasoningLevel с приоритетом (согласно reasoning.md):
+  // 1. Из decisions (если уже был выбран в UI)
+  // 2. Из lastAnswer (fallback для HITL)
+  // 3. Если нет - запрашиваем через HITL
   const lastAnswer = agentState.internalData.lastAnswer as any;
-  let inputMessage = userMessage;
+  let reasoningLevel: ReasoningLevel | undefined;
   
+  // Приоритет 1: из decisions (уже выбран в UI)
+  if (agentState.decisions?.reasoning_level?.value) {
+    reasoningLevel = agentState.decisions.reasoning_level.value as ReasoningLevel;
+    console.log("[mission_interpreter] Using reasoningLevel from decisions:", reasoningLevel);
+  }
+  // Приоритет 2: из lastAnswer (fallback для HITL)
+  else if (lastAnswer && lastAnswer.selectedOptionIds?.[0]) {
+    const selectedOption = lastAnswer.selectedOptionIds[0];
+    if (selectedOption === "basic" || selectedOption === "standard" || selectedOption === "professional") {
+      reasoningLevel = selectedOption as ReasoningLevel;
+      console.log("[mission_interpreter] User selected reasoningLevel from HITL:", reasoningLevel);
+      
+      // Сохраняем в decisions согласно reasoning.md
+      agentState.decisions = {
+        ...agentState.decisions,
+        reasoning_level: {
+          key: "reasoning_level",
+          value: reasoningLevel,
+          source: "user",
+          timestamp: new Date().toISOString(),
+        },
+      };
+      
+      // Обновляем sizePolicy
+      const { getSizePolicy } = await import("@/backend/agent/rules/sizePolicy");
+      agentState.sizePolicy = getSizePolicy(reasoningLevel);
+    }
+  }
+
+  // Check if we have a user answer with freeText (for missing fields)
+  let inputMessage = userMessage;
   if (lastAnswer && lastAnswer.freeText) {
-    // User provided answer via text input fields
-    // Combine the original message with the answer
     inputMessage = `${userMessage || ""}\n\nДополнительная информация от пользователя:\n${lastAnswer.freeText}`;
     console.log("[mission_interpreter] Using answer from question:", lastAnswer.freeText);
   }
 
-  // Try to extract mission from user message
+  // PRO: Extract mission information (without documentType - that's profile_builder's job)
   const systemPrompt = `Ты - эксперт по юридическим документам. Твоя задача - извлечь структурированную информацию о документе из запроса пользователя.
 
 Верни JSON объект со следующей структурой:
 {
-  "documentType": "название типа документа на русском языке (например: 'трудовой договор', 'договор оказания услуг', 'NDA', 'договор подряда', 'лицензионное соглашение' и т.д.)",
-  "jurisdiction": "RU" | "US" | "EU" | "UK" | "OTHER",
-  "language": "ru" | "en",
-  "partyA": "название стороны A или null",
-  "partyB": "название стороны B или null",
+  "jurisdiction": ["RU"] или ["US"] или ["RU", "US"] и т.д. (массив),
+  "language": "ru" | "en" | "dual",
   "businessContext": "краткое описание контекста или null",
   "userGoals": ["цель1", "цель2"] или [],
-  "riskTolerance": "low" | "medium" | "high" или null
+  "riskTolerance": "low" | "medium" | "high" или null,
+  "partyNames": ["название стороны 1", "название стороны 2"] или []
 }
 
 Важно: 
-- documentType должен быть понятным названием типа документа на русском языке (например: "трудовой договор", "договор оказания услуг", "договор подряда", "лицензионное соглашение", "NDA", "договор аренды" и т.д.)
-- Используй точное и понятное название, которое отражает суть документа
-- Если какая-то информация не указана явно, используй null. Для jurisdiction используй "OTHER" только если действительно не можешь определить.`;
+- jurisdiction должен быть массивом (например ["RU"])
+- Если юрисдикция не указана, используй ["RU"] по умолчанию
+- businessContext должен содержать описание бизнес-контекста и цели документа
+- userGoals - массив конкретных целей пользователя
+- НЕ определяй тип документа (documentType) - это будет сделано позже`;
 
   try {
     console.log("[mission_interpreter] Calling LLM with message:", inputMessage);
@@ -79,10 +163,7 @@ export async function missionInterpreter(
 
     // Check if we have enough information
     const missingFields: string[] = [];
-    if (!response.documentType || response.documentType.trim() === "") {
-      missingFields.push("тип документа");
-    }
-    if (!response.jurisdiction || response.jurisdiction === "OTHER") {
+    if (!response.jurisdiction || response.jurisdiction.length === 0) {
       missingFields.push("юрисдикция");
     }
 
@@ -93,6 +174,7 @@ export async function missionInterpreter(
         type: missingFields.length === 1 ? "single_choice" : "multi_choice",
         title: "Уточнение информации о документе",
         text: `Для создания документа мне нужна дополнительная информация: ${missingFields.join(", ")}.`,
+        required: true,
         legalImpact: "Эта информация влияет на структуру и содержание документа.",
         options: missingFields.map((field, idx) => {
           const fieldId = field.toLowerCase().replace(/\s+/g, "_");
@@ -101,16 +183,13 @@ export async function missionInterpreter(
             label: field,
             description: `Укажите ${field}`,
             requiresInput: true,
-            inputPlaceholder: field === "тип документа" 
-              ? "Например: договор продажи автомобиля, трудовой договор, NDA"
-              : field === "юрисдикция"
+            inputPlaceholder: field === "юрисдикция"
               ? "Например: RU, US, EU, UK"
               : `Введите ${field}`,
           };
         }),
       };
 
-      // For now, create a simple question - in real implementation, this would be more sophisticated
       const chatMessage: ChatMessage = {
         id: `msg-${Date.now()}`,
         role: "assistant",
@@ -126,20 +205,43 @@ export async function missionInterpreter(
       };
     }
 
-    // Create mission
+    // PRO: Используем reasoningLevel из decisions или default согласно reasoning.md
+    const finalReasoningLevel = reasoningLevel || "standard";
+    
+    // Обновляем sizePolicy если reasoningLevel был установлен
+    if (reasoningLevel) {
+      const { getSizePolicy } = await import("@/backend/agent/rules/sizePolicy");
+      agentState.sizePolicy = getSizePolicy(reasoningLevel);
+    }
+    
+    // PRO: Create mission without documentType (that's profile_builder's job)
     const mission: LegalDocumentMission = {
-      documentType: response.documentType!,
-      jurisdiction: response.jurisdiction!,
-      language: response.language || "ru",
-      partyA: response.partyA || undefined,
-      partyB: response.partyB || undefined,
-      businessContext: response.businessContext || undefined,
+      rawUserInput: userMessage, // PRO: сохраняем исходный запрос
+      jurisdiction: response.jurisdiction || ["RU"],
+      language: (response.language as "ru" | "en" | "dual") || "ru",
+      parties: [], // PRO: будет заполнено party_details_collector
+      businessContext: response.businessContext || userMessage,
       userGoals: response.userGoals || [],
-      riskTolerance: response.riskTolerance || "medium",
+      reasoningLevel: finalReasoningLevel, // PRO: уровень рассуждения
+      stylePresetId: "default",
     };
+    
+    // PRO: Сохраняем reasoningLevel в decisions если еще не сохранен (согласно reasoning.md строки 94-99)
+    if (!agentState.decisions?.reasoning_level) {
+      agentState.decisions = {
+        ...agentState.decisions,
+        reasoning_level: {
+          key: "reasoning_level",
+          value: finalReasoningLevel,
+          source: reasoningLevel ? "user" : "default",
+          timestamp: new Date().toISOString(),
+        },
+      };
+    }
 
     console.log("[mission_interpreter] Created mission:", JSON.stringify(mission, null, 2));
     
+    // Обновляем mission на верхнем уровне согласно archv2.md
     const updatedState = updateAgentStateData(agentState, { mission });
     console.log("[mission_interpreter] Updated state internalData keys:", Object.keys(updatedState.internalData));
     
@@ -152,7 +254,7 @@ export async function missionInterpreter(
     const chatMessage: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: "assistant",
-      content: `Понял! Создаю ${mission.documentType} для юрисдикции ${mission.jurisdiction}. Начинаю анализ требований...`,
+      content: `Понял! Создаю документ для юрисдикции ${mission.jurisdiction.join(", ")}. Уровень детализации: ${mission.reasoningLevel}. Начинаю построение профиля документа...`,
       timestamp: new Date(),
     };
 

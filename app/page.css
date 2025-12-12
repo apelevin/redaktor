@@ -332,6 +332,146 @@
   align-self: flex-end;
 }
 
+/* Reasoning Level Selector */
+.reasoning-level-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  background-color: white;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border-color);
+}
+
+.reasoning-level-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.reasoning-level-header h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.reasoning-level-description {
+  font-size: 0.9375rem;
+  color: #4b5563;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.reasoning-level-impact {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+  font-style: italic;
+}
+
+.reasoning-level-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.reasoning-level-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  background-color: #f9fafb;
+  border: 2px solid var(--border-color);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.reasoning-level-option:hover {
+  background-color: #f3f4f6;
+  border-color: var(--primary-color);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.reasoning-level-option.selected {
+  background-color: #eff6ff;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.reasoning-level-option.recommended {
+  border-color: #10b981;
+  background-color: #f0fdf4;
+}
+
+.reasoning-level-option.recommended:hover {
+  border-color: #059669;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+}
+
+.reasoning-level-option.recommended.selected {
+  background-color: #d1fae5;
+  border-color: #059669;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+
+.reasoning-level-option-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.reasoning-level-label {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.reasoning-level-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #059669;
+  background-color: #d1fae5;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.reasoning-level-effect {
+  font-size: 0.9375rem;
+  color: #4b5563;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.reasoning-level-risk {
+  font-size: 0.875rem;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.risk-low {
+  color: #059669;
+  font-weight: 500;
+}
+
+.risk-medium {
+  color: #d97706;
+  font-weight: 500;
+}
+
+.risk-high {
+  color: #dc2626;
+  font-weight: 500;
+}
+
 /* Question Form */
 .question-form {
   background-color: white;

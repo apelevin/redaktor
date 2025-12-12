@@ -16,16 +16,15 @@ export async function stylePlanner(
   agentState: AgentState,
   document: LegalDocument | null
 ): Promise<AgentStepResult> {
-  const mission = agentState.internalData.mission as
-    | { documentType: string; jurisdiction: string; businessContext?: string }
-    | undefined;
+  const mission = agentState.mission;
+  const profile = agentState.profile;
 
   if (!mission) {
     throw new Error("Mission not found in agent state");
   }
 
-  // Determine style based on document type and jurisdiction
-  const stylePreset: StylePreset = determineStyle(mission);
+  // Determine style based on profile and jurisdiction (PRO согласно archv2.md)
+  const stylePreset: StylePreset = determineStyle(mission, profile);
 
   // Update state
   const updatedState = updateAgentStateData(agentState, { stylePreset });
@@ -49,26 +48,26 @@ export async function stylePlanner(
   };
 }
 
-function determineStyle(mission: {
-  documentType: string;
-  jurisdiction: string;
-  businessContext?: string;
-}): StylePreset {
+function determineStyle(
+  mission: any,
+  profile?: any
+): StylePreset {
   // Default style based on jurisdiction
   let family: StylePreset["family"] = "balanced";
   let formality: StylePreset["formality"] = "medium";
   let sentenceLength: StylePreset["sentenceLength"] = "medium";
 
-  if (mission.jurisdiction === "RU") {
+  const jurisdiction = mission.jurisdiction?.[0] || "RU";
+  if (jurisdiction === "RU") {
     family = "civil_ru";
     formality = "high";
-  } else if (mission.jurisdiction === "US" || mission.jurisdiction === "UK") {
+  } else if (jurisdiction === "US" || jurisdiction === "UK") {
     family = "anglo_saxon";
     formality = "high";
   }
 
-  // Adjust based on document type
-  if (mission.documentType === "SaaS_MSA") {
+  // PRO: Используем profile вместо documentType согласно archv2.md
+  if (profile?.legalDomains.includes("services") && profile?.legalDomains.includes("sla")) {
     formality = "high";
     family = "enterprise_legalese";
   }

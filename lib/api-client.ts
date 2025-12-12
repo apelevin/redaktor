@@ -9,9 +9,11 @@ import type {
   AgentState,
   UserAnswer,
   LegalDocument,
+  ReasoningLevel,
 } from "./types";
 
-export interface AgentStepResponseWithCost extends AgentStepResult {
+export interface AgentStepResponseWithCost {
+  result: AgentStepResult;
   totalCost?: number;
   totalTokens?: number;
   promptTokens?: number;
@@ -30,12 +32,21 @@ export class AgentAPIClient {
     request: AgentStepRequest
   ): Promise<AgentStepResponseWithCost> {
     try {
+      // PRO: conversationId обязателен согласно archv2.md
+      if (!request.conversationId && !request.agentState?.conversationId) {
+        throw new Error("conversationId is required");
+      }
+      const requestBody: AgentStepRequest = {
+        ...request,
+        conversationId: request.conversationId || request.agentState!.conversationId,
+      };
+
       const response = await fetch(this.baseUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -54,8 +65,8 @@ export class AgentAPIClient {
         lastModel: data.lastModel,
       });
       
-      const result = {
-        ...data.result,
+      const result: AgentStepResponseWithCost = {
+        result: data.result,
         totalCost: data.totalCost,
         totalTokens: data.totalTokens,
         promptTokens: data.promptTokens,
@@ -75,23 +86,31 @@ export class AgentAPIClient {
 
   async sendMessage(
     message: string,
-    agentState: AgentState | null
-  ): Promise<AgentStepResult> {
+    agentState: AgentState | null,
+    conversationId: string,
+    reasoningLevel?: ReasoningLevel
+  ): Promise<AgentStepResponseWithCost> {
     return this.step({
+      conversationId,
       userMessage: message,
       agentState,
+      reasoningLevel, // Передаем только для первого запроса
     });
   }
 
   async answerQuestion(
     answer: UserAnswer,
     agentState: AgentState,
-    documentChanges?: Partial<LegalDocument>
-  ): Promise<AgentStepResult> {
+    conversationId: string,
+    documentChanges?: Partial<LegalDocument>,
+    documentPatchFromUser?: Partial<LegalDocument>
+  ): Promise<AgentStepResponseWithCost> {
     return this.step({
+      conversationId,
       userAnswer: answer,
       agentState,
-      documentChanges,
+      documentChanges, // Legacy
+      documentPatchFromUser, // PRO
     });
   }
 

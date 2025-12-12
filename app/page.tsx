@@ -9,10 +9,17 @@ import type {
   ChatMessage,
   UserAnswer,
   AgentStepResult,
+  ReasoningLevel,
 } from "@/lib/types";
 import "./page.css";
 
 export default function Home() {
+  // PRO: Generate conversationId on mount (обязательное поле согласно archv2.md)
+  const conversationIdRef = useRef<string>(`conv-${Date.now()}`);
+  
+  // Reasoning level selection (выбирается единожды в начале согласно reasoning.md)
+  const [selectedReasoningLevel, setSelectedReasoningLevel] = useState<ReasoningLevel | null>(null);
+  
   const [state, setState] = useState<UIState>({
     document: null,
     agentState: null,
@@ -26,25 +33,28 @@ export default function Home() {
     completionTokens: 0,
   });
 
-  const handleAgentResult = useCallback((result: any) => {
+  const handleAgentResult = useCallback((response: any) => {
     setState((prev) => {
       const newState = { ...prev };
+      
+      // Extract result from response
+      const result = response.result || response;
       
       // Update agent state
       newState.agentState = result.state;
       
       // Debug logging
       console.log(`[Frontend] Received result:`, {
-        totalCost: result.totalCost,
+        totalCost: response.totalCost,
         tokens: {
-          prompt: result.promptTokens,
-          completion: result.completionTokens,
-          total: result.totalTokens,
-          calculatedTotal: (result.promptTokens !== undefined && result.completionTokens !== undefined) 
-            ? result.promptTokens + result.completionTokens 
+          prompt: response.promptTokens,
+          completion: response.completionTokens,
+          total: response.totalTokens,
+          calculatedTotal: (response.promptTokens !== undefined && response.completionTokens !== undefined) 
+            ? response.promptTokens + response.completionTokens 
             : undefined,
         },
-        lastModel: result.lastModel,
+        lastModel: response.lastModel,
         prevTotalCost: prev.totalCost,
         prevTokens: {
           prompt: prev.promptTokens,
@@ -53,45 +63,12 @@ export default function Home() {
         },
       });
       
-      // Update cost and tokens if provided
-      // Use nullish coalescing to allow 0 values
-      if (result.totalCost !== undefined && result.totalCost !== null) {
-        newState.totalCost = result.totalCost;
-        console.log(`[Frontend] Updated totalCost to: ${newState.totalCost}`);
-      } else {
-        console.warn(`[Frontend] totalCost is undefined or null, keeping previous value: ${prev.totalCost}`);
-      }
-      
-      // Update tokens - prefer explicit values, calculate total if needed
-      if (result.promptTokens !== undefined) {
-        newState.promptTokens = result.promptTokens;
-      }
-      if (result.completionTokens !== undefined) {
-        newState.completionTokens = result.completionTokens;
-      }
-      
-      // Calculate totalTokens as sum of prompt + completion for accuracy
-      if (result.totalTokens !== undefined) {
-        // Use provided total, but verify it matches sum
-        const calculatedTotal = 
-          (newState.promptTokens !== undefined && newState.completionTokens !== undefined)
-            ? newState.promptTokens + newState.completionTokens
-            : undefined;
-        
-        if (calculatedTotal !== undefined && Math.abs(calculatedTotal - result.totalTokens) > 0) {
-          console.warn(`[Frontend] Token count mismatch: calculated=${calculatedTotal}, API=${result.totalTokens}, using calculated`);
-          newState.totalTokens = calculatedTotal;
-        } else {
-          newState.totalTokens = result.totalTokens;
-        }
-      } else if (newState.promptTokens !== undefined && newState.completionTokens !== undefined) {
-        // Calculate total from prompt + completion if total not provided
-        newState.totalTokens = newState.promptTokens + newState.completionTokens;
-        console.log(`[Frontend] Calculated totalTokens from sum: ${newState.totalTokens}`);
-      }
-      if (result.lastModel !== undefined) {
-        newState.lastModel = result.lastModel;
-      }
+      // Update cost and tokens from response
+      newState.totalCost = response.totalCost ?? prev.totalCost;
+      newState.totalTokens = response.totalTokens ?? prev.totalTokens;
+      newState.promptTokens = response.promptTokens ?? prev.promptTokens;
+      newState.completionTokens = response.completionTokens ?? prev.completionTokens;
+      newState.lastModel = response.lastModel ?? prev.lastModel;
       
       // Add chat messages
       newState.chatMessages = [
@@ -105,8 +82,9 @@ export default function Home() {
         hasDocumentPatch: !!result.documentPatch,
         prevDocument: !!prev.document,
         documentPatchId: result.documentPatch?.id,
-        documentPatchSections: result.documentPatch?.sections?.length,
-        documentPatchClauses: result.documentPatch?.clauses?.length,
+        documentPatchSections: result.documentPatch?.skeleton?.sections?.length,
+        documentPatchClauses: result.documentPatch?.clauseDrafts?.length,
+        responseTotalCost: response.totalCost,
       });
 
       if (result.type === "continue" || result.type === "need_user_input") {
@@ -114,26 +92,45 @@ export default function Home() {
           // Always update document if documentPatch is provided
           if (result.documentPatch.id && result.documentPatch.mission) {
             // Merge with previous document if it exists, or create new one
+            // PRO: Support both new structure and legacy
             newState.document = {
               ...(prev.document || {}),
               id: result.documentPatch.id,
-              mission: result.documentPatch.mission,
-              sections: result.documentPatch.sections || prev.document?.sections || [],
-              clauses: result.documentPatch.clauses || prev.document?.clauses || [],
-              stylePreset: result.documentPatch.stylePreset || prev.document?.stylePreset || { name: "default", language: "ru" },
+              mission: result.documentPatch.mission || prev.document?.mission,
+              // PRO: new structure
+              profile: result.documentPatch.profile || prev.document?.profile,
+              skeleton: result.documentPatch.skeleton || prev.document?.skeleton,
+              clauseRequirements: result.documentPatch.clauseRequirements || prev.document?.clauseRequirements,
+              clauseDrafts: result.documentPatch.clauseDrafts || prev.document?.clauseDrafts,
+              finalText: result.documentPatch.finalText || prev.document?.finalText,
+              stylePreset: result.documentPatch.stylePreset || prev.document?.stylePreset || { 
+                id: "default",
+                family: "balanced",
+                sentenceLength: "medium",
+                formality: "medium",
+                definitionPlacement: "inline",
+                crossReferenceFormat: "numeric",
+              },
               createdAt: prev.document?.createdAt || new Date(),
               updatedAt: new Date(),
             };
             console.log(`[Frontend] Updated document:`, {
               id: newState.document.id,
-              sections: newState.document.sections.length,
-              clauses: newState.document.clauses.length,
+              sections: newState.document.skeleton.sections.length,
+              clauses: newState.document.clauseDrafts.length,
+              hasProfile: !!newState.document.profile,
             });
           } else if (prev.document) {
-            // Merge patch into existing document
+            // Merge patch into existing document (обязательные поля должны быть сохранены)
             newState.document = {
               ...prev.document,
               ...result.documentPatch,
+              // Убеждаемся, что обязательные поля не потеряны
+              profile: result.documentPatch.profile || prev.document.profile,
+              skeleton: result.documentPatch.skeleton || prev.document.skeleton,
+              clauseRequirements: result.documentPatch.clauseRequirements || prev.document.clauseRequirements,
+              clauseDrafts: result.documentPatch.clauseDrafts || prev.document.clauseDrafts,
+              finalText: result.documentPatch.finalText || prev.document.finalText,
               updatedAt: new Date(),
             };
             console.log(`[Frontend] Merged documentPatch into existing document`);
@@ -148,11 +145,11 @@ export default function Home() {
                 setState((prev) => {
                   // Only update if we don't have a document or new one is different
                   if (!prev.document || 
-                      (doc.clauses?.length || 0) > (prev.document.clauses?.length || 0) ||
-                      (doc.sections?.length || 0) > (prev.document.sections?.length || 0)) {
+                      (doc.clauseDrafts?.length || 0) > (prev.document.clauseDrafts?.length || 0) ||
+                      (doc.skeleton?.sections?.length || 0) > (prev.document.skeleton?.sections?.length || 0)) {
                     console.log(`[Frontend] Loaded document from storage:`, {
-                      sections: doc.sections?.length || 0,
-                      clauses: doc.clauses?.length || 0,
+                      sections: doc.skeleton?.sections?.length || 0,
+                      clauses: doc.clauseDrafts?.length || 0,
                     });
                     return {
                       ...prev,
@@ -173,8 +170,8 @@ export default function Home() {
         newState.document = result.document;
         console.log(`[Frontend] Document finished, set to:`, {
           id: result.document.id,
-          sections: result.document.sections.length,
-          clauses: result.document.clauses.length,
+          sections: result.document.skeleton.sections.length,
+          clauses: result.document.clauseDrafts.length,
         });
       }
       
@@ -184,6 +181,10 @@ export default function Home() {
       } else {
         newState.pendingQuestion = undefined;
       }
+
+      // PRO: Handle highlighted sections/clauses from result
+      // These will be passed to DocumentPane
+      // (highlightedSectionId and highlightedClauseId are already in DocumentPane props)
       
       newState.isLoading = false;
       
@@ -204,7 +205,7 @@ export default function Home() {
     if (isGenerating) {
       // Initialize clause count if we have a document
       if (state.document) {
-        lastClauseCountRef.current = state.document.clauses?.length || 0;
+                lastClauseCountRef.current = state.document.clauseDrafts.length;
       }
       
       if (!pollingIntervalRef.current) {
@@ -220,10 +221,10 @@ export default function Home() {
             const document = await agentClient.getDocument(documentId);
             if (document) {
               setState((prev) => {
-                const currentClauseCount = prev.document?.clauses?.length || 0;
-                const newClauseCount = document.clauses?.length || 0;
-                const currentSectionCount = prev.document?.sections?.length || 0;
-                const newSectionCount = document.sections?.length || 0;
+                              const currentClauseCount = prev.document?.clauseDrafts.length || 0;
+                              const newClauseCount = document.clauseDrafts.length;
+                              const currentSectionCount = prev.document?.skeleton.sections.length || 0;
+                              const newSectionCount = document.skeleton.sections.length;
                 
                 // Update if we have more clauses, more sections, or document structure changed
                 if (
@@ -290,9 +291,20 @@ export default function Home() {
       }));
 
       try {
+        // PRO: conversationId обязателен согласно archv2.md
+        const conversationId = state.agentState?.conversationId || conversationIdRef.current;
+        conversationIdRef.current = conversationId; // Сохраняем для последующих запросов
+        
+        // PRO: Передаем reasoningLevel только для первого запроса (согласно reasoning.md)
+        const reasoningLevelToSend = state.agentState === null && selectedReasoningLevel !== null 
+          ? selectedReasoningLevel 
+          : undefined;
+        
         const result = await agentClient.sendMessage(
           message,
-          state.agentState
+          state.agentState,
+          conversationId,
+          reasoningLevelToSend
         );
         handleAgentResult(result);
       } catch (error) {
@@ -317,9 +329,17 @@ export default function Home() {
       }));
 
       try {
+        // PRO: conversationId обязателен согласно archv2.md
+        if (!state.agentState?.conversationId) {
+          throw new Error("AgentState must have conversationId");
+        }
+        
         const result = await agentClient.answerQuestion(
           answer,
-          state.agentState
+          state.agentState,
+          state.agentState.conversationId,
+          undefined, // documentChanges (legacy)
+          undefined // documentPatchFromUser (PRO - can be added later)
         );
         handleAgentResult(result);
       } catch (error) {
@@ -352,10 +372,13 @@ export default function Home() {
           totalCost={state.totalCost}
           lastModel={state.lastModel}
         />
+        {/* PRO: highlightedSectionId and highlightedClauseId from result are handled via pendingQuestion for now */}
         <ChatPane
           messages={state.chatMessages}
           pendingQuestion={state.pendingQuestion}
           isLoading={state.isLoading}
+          reasoningLevel={selectedReasoningLevel}
+          onReasoningLevelChange={setSelectedReasoningLevel}
           onSendMessage={handleSendMessage}
           onAnswerQuestion={handleAnswerQuestion}
         />

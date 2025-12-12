@@ -11,6 +11,12 @@ import type {
   DocumentSkeleton,
   UserQuestion,
   ChatMessage,
+  DocumentProfile,
+  DecisionsMap,
+  LegalDomain,
+  LegalBlock,
+  DecisionKey,
+  PartyRole,
 } from "@/lib/types";
 import { getOpenRouterClient } from "@/backend/llm/openrouter";
 import { updateAgentStateData, updateAgentStateStep } from "../state";
@@ -19,14 +25,18 @@ export async function clauseRequirementsGenerator(
   agentState: AgentState,
   document: LegalDocument | null
 ): Promise<AgentStepResult> {
-  const mission = agentState.internalData.mission as
-    | { documentType: string; riskTolerance?: string }
-    | undefined;
-  const skeleton = agentState.internalData.skeleton as DocumentSkeleton | undefined;
+  const mission = agentState.mission as any;
+  const profile = agentState.profile as DocumentProfile | undefined;
+  const skeleton = agentState.skeleton as DocumentSkeleton | undefined;
   const issues = agentState.internalData.issues as any[] | undefined;
+  const decisions = agentState.decisions; // обязательное поле на верхнем уровне
 
   if (!mission || !skeleton || !issues) {
     throw new Error("Mission, skeleton, or issues not found in agent state");
+  }
+
+  if (!profile) {
+    throw new Error("Profile not found in agent state - profile_builder must run first");
   }
 
   // First, check if we have an answer about liability cap and process it
@@ -45,10 +55,7 @@ export async function clauseRequirementsGenerator(
     agentState = updateAgentStateData(agentState, {
       liabilityCap: capChoice,
       liabilityCapDecided: true,
-      // Preserve existing data
-      ...(agentState.internalData.mission ? { mission: agentState.internalData.mission } : {}),
-      ...(agentState.internalData.issues ? { issues: agentState.internalData.issues } : {}),
-      ...(agentState.internalData.skeleton ? { skeleton: agentState.internalData.skeleton } : {}),
+      // mission и skeleton уже на верхнем уровне согласно archv2.md
     });
     console.log(`[clause_requirements_generator] Updated state, liabilityCapDecided: ${agentState.internalData.liabilityCapDecided}`);
   }
@@ -71,6 +78,7 @@ export async function clauseRequirementsGenerator(
         type: "single_choice",
         title: "Ограничение ответственности",
         text: "Сейчас я предлагаю ограничить ответственность поставщика суммой платежей за 12 месяцев. Это стандартная позиция для enterprise SaaS. Вас устроит такой cap?",
+        required: true,
         legalImpact: "Ограничение ответственности защищает от крупных исков, но слишком низкий cap может быть неприемлем для контрагента.",
         relatesToSectionId: section.id,
         options: [
@@ -117,28 +125,46 @@ export async function clauseRequirementsGenerator(
       };
     }
 
+    // PRO: Determine related domains, blocks, decisions, and party roles for this section
+    const relatedDomains = determineRelatedDomains(section, profile);
+    const relatedBlocks = determineRelatedBlocks(section, profile);
+    const relatedDecisions = determineRelatedDecisions(section, profile);
+    const relatedPartyRoles = determineRelatedPartyRoles(section, profile);
+
+    // PRO: Check if required decisions are missing - if so, stop and ask user
+    const missingDecisions = relatedDecisions.filter(
+      (key) => !decisions || !decisions[key]
+    );
+
+    if (missingDecisions.length > 0) {
+      // Need to collect decisions first - this will be handled by decision_collector step
+      // For now, just log it and continue (decision_collector will handle it)
+      console.log(`[clause_requirements_generator] Section ${section.title} requires decisions: ${missingDecisions.join(", ")}`);
+    }
+
     // Generate requirement for section
     const requirement: ClauseRequirement = {
       id: `req-${section.id}`,
       sectionId: section.id,
+      title: section.title, // PRO: add title
       purpose: `Покрывает вопросы: ${sectionIssues.map((i) => i.category).join(", ")}`,
       relatedIssues: sectionIssues.map((i) => i.id),
       requiredElements: extractRequiredElements(sectionIssues, section),
-      recommendedElements: extractRecommendedElements(sectionIssues, section, mission.riskTolerance),
+      recommendedElements: extractRecommendedElements(sectionIssues, section, "medium"), // riskTolerance убран из mission согласно archv2.md
+      // PRO: add new fields
+      relatedDomains,
+      relatedBlocks,
+      relatedDecisions: relatedDecisions.length > 0 ? relatedDecisions : undefined,
+      relatedPartyRoles: relatedPartyRoles.length > 0 ? relatedPartyRoles : undefined,
       riskNotes: generateRiskNotes(sectionIssues),
     };
 
     requirements.push(requirement);
   }
 
-  // Update state with requirements and preserve liability cap decision
+  // Update state with requirements (на верхнем уровне согласно archv2.md)
   const updatedState = updateAgentStateData(agentState, {
     clauseRequirements: requirements,
-    // Preserve liabilityCapDecided if it was set
-    ...(agentState.internalData.liabilityCapDecided ? {
-      liabilityCapDecided: true,
-      liabilityCap: agentState.internalData.liabilityCap,
-    } : {}),
   });
   
   console.log(`[clause_requirements_generator] Updated state, liabilityCapDecided: ${updatedState.internalData.liabilityCapDecided}`);
@@ -235,5 +261,134 @@ function generateRiskNotes(issues: any[]): string | undefined {
     return `Высокий риск по вопросам: ${highRiskIssues.map((i) => i.category).join(", ")}`;
   }
   return undefined;
+}
+
+// PRO: Helper functions for determining relationships
+function determineRelatedDomains(section: any, profile: DocumentProfile): LegalDomain[] {
+  const sectionTitle = section.title.toLowerCase();
+  const domains: LegalDomain[] = [];
+
+  // Map section titles to domains
+  if (sectionTitle.includes("конфиденциальн")) {
+    domains.push("confidentiality");
+  }
+  if (sectionTitle.includes("услуг") || sectionTitle.includes("работ")) {
+    domains.push("services");
+  }
+  if (sectionTitle.includes("интеллектуальн") || sectionTitle.includes("права")) {
+    domains.push("ip");
+  }
+  if (sectionTitle.includes("персональн") || sectionTitle.includes("данн")) {
+    domains.push("data_protection_ru");
+  }
+  if (sectionTitle.includes("оплат") || sectionTitle.includes("стоимость")) {
+    domains.push("payment");
+  }
+  if (sectionTitle.includes("ответственн")) {
+    domains.push("liability");
+  }
+  if (sectionTitle.includes("расторжен")) {
+    domains.push("termination");
+  }
+  if (sectionTitle.includes("спор")) {
+    domains.push("dispute_resolution");
+  }
+  if (sectionTitle.includes("право") || sectionTitle.includes("применим")) {
+    domains.push("governing_law");
+  }
+
+  // Intersect with profile domains
+  return domains.filter((d) => profile.legalDomains.includes(d));
+}
+
+function determineRelatedBlocks(section: any, profile: DocumentProfile): LegalBlock[] {
+  const sectionTitle = section.title.toLowerCase();
+  const blocks: LegalBlock[] = [];
+
+  // Map section titles to blocks
+  if (sectionTitle.includes("сторон") || sectionTitle.includes("преамбул")) {
+    blocks.push("preamble_parties");
+  }
+  if (sectionTitle.includes("термин") || sectionTitle.includes("определен")) {
+    blocks.push("definitions");
+  }
+  if (sectionTitle.includes("предмет")) {
+    blocks.push("subject_scope");
+  }
+  if (sectionTitle.includes("приемк") || sectionTitle.includes("результат")) {
+    blocks.push("deliverables_acceptance");
+  }
+  if (sectionTitle.includes("оплат") || sectionTitle.includes("стоимость")) {
+    blocks.push("fees_payment");
+  }
+  if (sectionTitle.includes("конфиденциальн")) {
+    blocks.push("confidentiality");
+  }
+  if (sectionTitle.includes("интеллектуальн")) {
+    blocks.push("ip_rights");
+  }
+  if (sectionTitle.includes("ответственн")) {
+    blocks.push("liability_cap_exclusions");
+  }
+  if (sectionTitle.includes("расторжен")) {
+    blocks.push("termination");
+  }
+
+  // Intersect with profile blocks
+  return blocks.filter((b) => 
+    profile.mandatoryBlocks.includes(b) || profile.optionalBlocks.includes(b)
+  );
+}
+
+function determineRelatedDecisions(section: any, profile: DocumentProfile): DecisionKey[] {
+  const sectionTitle = section.title.toLowerCase();
+  const decisions: DecisionKey[] = [];
+
+  if (sectionTitle.includes("ответственн")) {
+    decisions.push("liability_cap");
+  }
+  if (sectionTitle.includes("срок") || sectionTitle.includes("действ")) {
+    decisions.push("term");
+    decisions.push("auto_renewal");
+  }
+  if (sectionTitle.includes("расторжен")) {
+    decisions.push("termination_rights");
+  }
+  if (sectionTitle.includes("интеллектуальн") && profile.legalDomains.includes("ip")) {
+    decisions.push("ip_model");
+  }
+  if (sectionTitle.includes("персональн") || sectionTitle.includes("данн")) {
+    decisions.push("pd_regime_ru");
+  }
+  if (sectionTitle.includes("обслуживан") || sectionTitle.includes("sla")) {
+    decisions.push("sla_level");
+  }
+  if (sectionTitle.includes("оплат")) {
+    decisions.push("payment_terms");
+  }
+  if (sectionTitle.includes("спор") || sectionTitle.includes("право")) {
+    decisions.push("governing_law");
+    decisions.push("dispute_resolution");
+  }
+
+  return decisions;
+}
+
+function determineRelatedPartyRoles(section: any, profile: DocumentProfile): PartyRole[] {
+  const sectionTitle = section.title.toLowerCase();
+  const roles: PartyRole[] = [];
+
+  // Most sections involve both parties, but some are specific
+  if (sectionTitle.includes("оплат") || sectionTitle.includes("стоимость")) {
+    roles.push("customer", "vendor");
+  }
+  if (sectionTitle.includes("услуг") || sectionTitle.includes("работ")) {
+    roles.push("vendor", "customer");
+  }
+  if (sectionTitle.includes("ответственн")) {
+    roles.push("vendor", "customer");
+  }
+
+  return roles;
 }
 

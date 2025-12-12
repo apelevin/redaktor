@@ -10,9 +10,12 @@ import type {
   Issue,
   UserQuestion,
   ChatMessage,
+  DocumentProfile,
+  DocumentSizePolicy,
 } from "@/lib/types";
 import { getOpenRouterClient } from "@/backend/llm/openrouter";
 import { updateAgentStateData, updateAgentStateStep, updateUsageStats } from "../state";
+import { getProhibitedPatternsForDomain } from "../rules/prohibitedPatternsRU";
 
 interface IssuesResponse {
   requiredIssues: Array<{
@@ -31,12 +34,16 @@ export async function issueSpotter(
   agentState: AgentState,
   document: LegalDocument | null
 ): Promise<AgentStepResult> {
-  const mission = agentState.internalData.mission as
-    | { documentType: string; jurisdiction: string; userGoals?: string[]; businessContext?: string; riskTolerance?: string }
-    | undefined;
+  const mission = agentState.mission as any;
+  const profile = agentState.profile as DocumentProfile | undefined;
+  const sizePolicy = agentState.sizePolicy; // обязательное поле на верхнем уровне
 
   if (!mission) {
     throw new Error("Mission not found in agent state");
+  }
+
+  if (!profile) {
+    throw new Error("Profile not found in agent state - profile_builder must run first");
   }
 
   const llm = getOpenRouterClient();
@@ -46,7 +53,7 @@ export async function issueSpotter(
   
   // If we don't have issues yet, generate them using LLM
   if (issues.length === 0) {
-    const systemPrompt = `Ты - эксперт по юридическим документам. Твоя задача - определить юридические вопросы (issues), которые должны быть покрыты в документе.
+    const systemPrompt = `Ты - эксперт по российскому праву. Твоя задача - определить юридические вопросы (issues), которые должны быть покрыты в документе.
 
 Верни JSON объект со следующей структурой:
 {
@@ -67,22 +74,25 @@ export async function issueSpotter(
 }
 
 Важно:
-- requiredIssues - обязательные вопросы, которые ДОЛЖНЫ быть в документе этого типа
-- optionalIssues - опциональные вопросы, которые могут быть включены по желанию
+- requiredIssues - обязательные вопросы, которые ДОЛЖНЫ быть в документе
+- optionalIssues - опциональные вопросы (включать только если sizePolicy.includeOptionalProtections = true)
 - Используй понятные названия категорий на русском языке
-- Учитывай тип документа, юрисдикцию и контекст`;
+- Учитывай правовые домены (legalDomains) из профиля документа
+- Избегай запрещенных паттернов для РФ`;
 
     const userPrompt = `Определи юридические вопросы для документа:
-- Тип документа: ${mission.documentType}
-- Юрисдикция: ${mission.jurisdiction}
+- Профиль: ${profile.primaryPurpose}
+- Правовые домены: ${profile.legalDomains.join(", ")}
+- Юрисдикция: ${mission.jurisdiction?.join(", ") || "RU"}
 ${mission.businessContext ? `- Контекст: ${mission.businessContext}` : ""}
 ${mission.userGoals ? `- Цели: ${mission.userGoals.join(", ")}` : ""}
-${mission.riskTolerance ? `- Толерантность к риску: ${mission.riskTolerance}` : ""}
+${sizePolicy ? `- Уровень: ${sizePolicy.includeOptionalProtections ? "с опциональными защитами" : "базовый"}` : ""}
 
-Определи обязательные и опциональные вопросы, которые должны быть покрыты в этом документе.`;
+Определи обязательные и опциональные вопросы, которые должны быть покрыты в этом документе.
+${sizePolicy && !sizePolicy.includeOptionalProtections ? "Не включай опциональные вопросы." : ""}`;
 
     try {
-      console.log("[issue_spotter] Calling LLM to generate issues for:", mission.documentType);
+      console.log("[issue_spotter] Calling LLM to generate issues for profile:", profile.primaryPurpose);
       const result = await llm.chatJSON<IssuesResponse>([
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -103,7 +113,11 @@ ${mission.riskTolerance ? `- Толерантность к риску: ${mission
         required: true,
       }));
 
-      const optionalIssues: Issue[] = response.optionalIssues.map((issue, idx) => ({
+      // PRO: Filter optional issues based on sizePolicy
+      const optionalIssues: Issue[] = (sizePolicy?.includeOptionalProtections 
+        ? response.optionalIssues 
+        : []
+      ).map((issue, idx) => ({
         id: `issue-optional-${idx}`,
         category: issue.category,
         description: issue.description,
@@ -111,7 +125,16 @@ ${mission.riskTolerance ? `- Толерантность к риску: ${mission
         required: false,
       }));
 
-      issues = [...requiredIssues];
+      // PRO: Filter out issues related to prohibited patterns
+      const allIssues = [...requiredIssues, ...optionalIssues];
+      issues = allIssues.filter((issue) => {
+        // Check if issue category matches any prohibited pattern
+        const issueCategoryLower = issue.category.toLowerCase();
+        return !profile.prohibitedPatterns.some((pattern) =>
+          issueCategoryLower.includes(pattern.toLowerCase())
+        );
+      });
+
       agentState.internalData.optionalIssues = optionalIssues; // Store separately for later use
       
       console.log("[issue_spotter] Generated issues:", {
@@ -151,7 +174,8 @@ ${mission.riskTolerance ? `- Толерантность к риску: ${mission
           id: `question-${Date.now()}`,
           type: "multi_choice",
           title: "Дополнительные модули документа",
-          text: `Для ${mission.documentType} можно дополнительно включить следующие модули. Какие из них актуальны для вашего случая?`,
+          text: `Для ${profile.primaryPurpose} можно дополнительно включить следующие модули. Какие из них актуальны для вашего случая?`,
+          required: false,
           legalImpact: "Включение дополнительных модулей может усилить защиту ваших интересов, но также может усложнить переговоры с контрагентом.",
           options: optionalIssues.map((issue) => ({
             id: issue.id,
@@ -191,7 +215,7 @@ ${mission.riskTolerance ? `- Толерантность к риску: ${mission
   const updatedState = updateAgentStateData(agentState, { 
     issues,
     // Preserve mission if it exists
-    ...(agentState.internalData.mission ? { mission: agentState.internalData.mission } : {}),
+    // mission уже на верхнем уровне согласно archv2.md
   });
   
   console.log("[issue_spotter] Updated state internalData keys:", Object.keys(updatedState.internalData));

@@ -12,7 +12,14 @@ export async function POST(request: NextRequest) {
   try {
     const body: AgentStepRequest = await request.json();
 
-    // Validate request
+    // Validate request - conversationId обязателен согласно archv2.md
+    if (!body.conversationId) {
+      return NextResponse.json(
+        { error: "conversationId is required" },
+        { status: 400 }
+      );
+    }
+
     if (!body.agentState && !body.userMessage) {
       return NextResponse.json(
         { error: "Either agentState or userMessage is required" },
@@ -24,9 +31,11 @@ export async function POST(request: NextRequest) {
     const result = await executePipelineStep(body);
 
     // Extract cost and tokens from agent state
-    const totalCost = result.state.internalData.totalCost as number | undefined;
-    const promptTokens = result.state.internalData.promptTokens as number | undefined;
-    const completionTokens = result.state.internalData.completionTokens as number | undefined;
+    // PRO: Ensure internalData exists (может быть пустым при первом запросе)
+    const internalData = result.state.internalData || {};
+    const totalCost = internalData.totalCost as number | undefined;
+    const promptTokens = internalData.promptTokens as number | undefined;
+    const completionTokens = internalData.completionTokens as number | undefined;
     
     // Calculate totalTokens as sum of prompt + completion to ensure accuracy
     // This ensures we always have correct total even if state.totalTokens is outdated
@@ -46,8 +55,8 @@ export async function POST(request: NextRequest) {
       console.log(`[API] Loaded document from storage:`, {
         documentId: result.state.documentId,
         hasDocument: !!currentDocument,
-        documentSections: currentDocument?.sections?.length || 0,
-        documentClauses: currentDocument?.clauses?.length || 0,
+        documentSections: currentDocument?.skeleton?.sections?.length || 0,
+        documentClauses: currentDocument?.clauseDrafts?.length || 0,
       });
     }
 
@@ -62,20 +71,24 @@ export async function POST(request: NextRequest) {
         finalTotal: totalTokens,
       },
       lastModel,
-      internalDataKeys: Object.keys(result.state.internalData),
-      hasDocumentPatch: !!result.documentPatch,
+      internalDataKeys: Object.keys(internalData),
+      hasDocumentPatch: result.type !== "finished" ? !!result.documentPatch : false,
       hasCurrentDocument: !!currentDocument,
     });
 
-    // If document exists but wasn't in documentPatch, add it to the result
-    if (currentDocument && (result.type === "continue" || result.type === "need_user_input")) {
+    // PRO: If document exists but wasn't in documentPatch, add it to the result
+    if (currentDocument && result.type !== "finished" && (result.type === "continue" || result.type === "need_user_input")) {
       if (!result.documentPatch) {
         // Create documentPatch from current document if it doesn't exist
         result.documentPatch = {
           id: currentDocument.id,
           mission: currentDocument.mission,
-          sections: currentDocument.sections,
-          clauses: currentDocument.clauses,
+          // PRO: обязательные поля согласно archv2.md
+          profile: currentDocument.profile,
+          skeleton: currentDocument.skeleton,
+          clauseRequirements: currentDocument.clauseRequirements,
+          clauseDrafts: currentDocument.clauseDrafts,
+          finalText: currentDocument.finalText,
           stylePreset: currentDocument.stylePreset,
         };
         console.log(`[API] Added document to documentPatch for frontend`);
@@ -84,13 +97,20 @@ export async function POST(request: NextRequest) {
         result.documentPatch = {
           id: currentDocument.id,
           mission: result.documentPatch.mission || currentDocument.mission,
-          sections: result.documentPatch.sections || currentDocument.sections,
-          clauses: result.documentPatch.clauses || currentDocument.clauses,
+          // PRO: обязательные поля согласно archv2.md
+          profile: result.documentPatch.profile || currentDocument.profile,
+          skeleton: result.documentPatch.skeleton || currentDocument.skeleton,
+          clauseRequirements: result.documentPatch.clauseRequirements || currentDocument.clauseRequirements,
+          clauseDrafts: result.documentPatch.clauseDrafts || currentDocument.clauseDrafts,
+          finalText: result.documentPatch.finalText || currentDocument.finalText,
           stylePreset: result.documentPatch.stylePreset || currentDocument.stylePreset,
         };
         console.log(`[API] Merged document with documentPatch`);
       }
     }
+
+    // PRO: Pass through highlightedSectionId and highlightedClauseId from result
+    // (These are already in result, will be available in response)
 
     const response: AgentStepResponse = {
       result,
