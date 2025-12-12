@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import DocumentPane from "@/components/DocumentPane";
 import ChatPane from "@/components/ChatPane";
 import { agentClient } from "@/lib/api-client";
@@ -36,11 +36,21 @@ export default function Home() {
       // Debug logging
       console.log(`[Frontend] Received result:`, {
         totalCost: result.totalCost,
-        totalTokens: result.totalTokens,
-        promptTokens: result.promptTokens,
-        completionTokens: result.completionTokens,
+        tokens: {
+          prompt: result.promptTokens,
+          completion: result.completionTokens,
+          total: result.totalTokens,
+          calculatedTotal: (result.promptTokens !== undefined && result.completionTokens !== undefined) 
+            ? result.promptTokens + result.completionTokens 
+            : undefined,
+        },
         lastModel: result.lastModel,
         prevTotalCost: prev.totalCost,
+        prevTokens: {
+          prompt: prev.promptTokens,
+          completion: prev.completionTokens,
+          total: prev.totalTokens,
+        },
       });
       
       // Update cost and tokens if provided
@@ -51,14 +61,33 @@ export default function Home() {
       } else {
         console.warn(`[Frontend] totalCost is undefined or null, keeping previous value: ${prev.totalCost}`);
       }
-      if (result.totalTokens !== undefined) {
-        newState.totalTokens = result.totalTokens;
-      }
+      
+      // Update tokens - prefer explicit values, calculate total if needed
       if (result.promptTokens !== undefined) {
         newState.promptTokens = result.promptTokens;
       }
       if (result.completionTokens !== undefined) {
         newState.completionTokens = result.completionTokens;
+      }
+      
+      // Calculate totalTokens as sum of prompt + completion for accuracy
+      if (result.totalTokens !== undefined) {
+        // Use provided total, but verify it matches sum
+        const calculatedTotal = 
+          (newState.promptTokens !== undefined && newState.completionTokens !== undefined)
+            ? newState.promptTokens + newState.completionTokens
+            : undefined;
+        
+        if (calculatedTotal !== undefined && Math.abs(calculatedTotal - result.totalTokens) > 0) {
+          console.warn(`[Frontend] Token count mismatch: calculated=${calculatedTotal}, API=${result.totalTokens}, using calculated`);
+          newState.totalTokens = calculatedTotal;
+        } else {
+          newState.totalTokens = result.totalTokens;
+        }
+      } else if (newState.promptTokens !== undefined && newState.completionTokens !== undefined) {
+        // Calculate total from prompt + completion if total not provided
+        newState.totalTokens = newState.promptTokens + newState.completionTokens;
+        console.log(`[Frontend] Calculated totalTokens from sum: ${newState.totalTokens}`);
       }
       if (result.lastModel !== undefined) {
         newState.lastModel = result.lastModel;
@@ -110,7 +139,35 @@ export default function Home() {
             console.log(`[Frontend] Merged documentPatch into existing document`);
           }
         } else {
-          console.log(`[Frontend] No documentPatch provided, keeping previous document`);
+          // If no documentPatch but we have a documentId, try to load document immediately
+          if (result.state?.documentId) {
+            console.log(`[Frontend] No documentPatch, but have documentId, loading document immediately`);
+            // Try to load document immediately
+            agentClient.getDocument(result.state.documentId).then((doc) => {
+              if (doc) {
+                setState((prev) => {
+                  // Only update if we don't have a document or new one is different
+                  if (!prev.document || 
+                      (doc.clauses?.length || 0) > (prev.document.clauses?.length || 0) ||
+                      (doc.sections?.length || 0) > (prev.document.sections?.length || 0)) {
+                    console.log(`[Frontend] Loaded document from storage:`, {
+                      sections: doc.sections?.length || 0,
+                      clauses: doc.clauses?.length || 0,
+                    });
+                    return {
+                      ...prev,
+                      document: doc,
+                    };
+                  }
+                  return prev;
+                });
+              }
+            }).catch((error) => {
+              console.error(`[Frontend] Failed to load document:`, error);
+            });
+          } else {
+            console.log(`[Frontend] No documentPatch provided, keeping previous document`);
+          }
         }
       } else if (result.type === "finished") {
         newState.document = result.document;
@@ -133,6 +190,87 @@ export default function Home() {
       return newState;
     });
   }, []);
+
+  // Polling for document updates during clause generation
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastClauseCountRef = useRef<number>(0);
+
+  useEffect(() => {
+    const documentId = state.agentState?.documentId;
+    const isGenerating = state.isLoading && documentId;
+    
+    // Start polling if we're loading and have a document ID
+    // This will catch clause_generator and any other long-running steps
+    if (isGenerating) {
+      // Initialize clause count if we have a document
+      if (state.document) {
+        lastClauseCountRef.current = state.document.clauses?.length || 0;
+      }
+      
+      if (!pollingIntervalRef.current) {
+        console.log("[Frontend] Starting polling for document updates", {
+          documentId,
+          step: state.agentState?.step,
+        });
+        
+        pollingIntervalRef.current = setInterval(async () => {
+          if (!documentId) return;
+          
+          try {
+            const document = await agentClient.getDocument(documentId);
+            if (document) {
+              setState((prev) => {
+                const currentClauseCount = prev.document?.clauses?.length || 0;
+                const newClauseCount = document.clauses?.length || 0;
+                const currentSectionCount = prev.document?.sections?.length || 0;
+                const newSectionCount = document.sections?.length || 0;
+                
+                // Update if we have more clauses, more sections, or document structure changed
+                if (
+                  newClauseCount > currentClauseCount ||
+                  newSectionCount > currentSectionCount ||
+                  (document.updatedAt && prev.document?.updatedAt && 
+                   new Date(document.updatedAt) > new Date(prev.document.updatedAt))
+                ) {
+                  console.log(`[Frontend] Polling: Updated document`, {
+                    clauses: `${currentClauseCount} -> ${newClauseCount}`,
+                    sections: `${currentSectionCount} -> ${newSectionCount}`,
+                  });
+                  lastClauseCountRef.current = newClauseCount;
+                  return {
+                    ...prev,
+                    document: document,
+                  };
+                }
+                return prev;
+              });
+            }
+          } catch (error) {
+            console.error("[Frontend] Polling error:", error);
+          }
+        }, 1500); // Poll every 1.5 seconds for more responsive updates
+      }
+    } else {
+      // Stop polling if not loading
+      if (pollingIntervalRef.current) {
+        console.log("[Frontend] Stopping polling", {
+          isLoading: state.isLoading,
+          hasDocumentId: !!documentId,
+        });
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+        lastClauseCountRef.current = 0;
+      }
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [state.isLoading, state.agentState?.documentId, state.agentState?.step, state.document]);
 
   const handleSendMessage = useCallback(
     async (message: string) => {

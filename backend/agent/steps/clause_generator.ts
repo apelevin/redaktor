@@ -35,25 +35,44 @@ export async function clauseGenerator(
   }
 
   const llm = getOpenRouterClient();
+  const storage = getStorage();
   const clauses: ClauseDraft[] = [];
+
+  // Initialize document if it doesn't exist
+  let currentDocument = document;
+  if (!currentDocument) {
+    currentDocument = {
+      id: agentState.documentId,
+      mission: mission,
+      sections: skeleton.sections.map((s) => ({
+        ...s,
+        clauseIds: [],
+      })),
+      clauses: [],
+      stylePreset: stylePreset,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    storage.saveDocument(currentDocument);
+  }
 
   // Generate clause for each requirement
   for (const requirement of requirements) {
     const section = skeleton.sections.find((s) => s.id === requirement.sectionId);
     if (!section) continue;
 
-      try {
-        const clauseText = await generateClauseText(
-          llm,
-          requirement,
-          section,
-          stylePreset,
-          mission,
-          agentState
-        );
+    try {
+      const clauseText = await generateClauseText(
+        llm,
+        requirement,
+        section,
+        stylePreset,
+        mission,
+        agentState
+      );
 
       const clause: ClauseDraft = {
-        id: `clause-${section.id}-${Date.now()}`,
+        id: `clause-${section.id}-${Date.now()}-${clauses.length}`,
         sectionId: section.id,
         text: clauseText,
         reasoningSummary: `Покрывает: ${requirement.relatedIssues.join(", ")}`,
@@ -61,48 +80,46 @@ export async function clauseGenerator(
       };
 
       clauses.push(clause);
+
+      // Save intermediate document after each clause is generated
+      currentDocument = {
+        ...currentDocument,
+        clauses: [...clauses],
+        sections: skeleton.sections.map((s) => ({
+          ...s,
+          clauseIds: clauses.filter((c) => c.sectionId === s.id).map((c) => c.id),
+        })),
+        updatedAt: new Date(),
+      };
+      storage.saveDocument(currentDocument);
+      console.log(`[clause_generator] Saved intermediate document with ${clauses.length} clauses`);
     } catch (error) {
       console.error(`Error generating clause for ${section.title}:`, error);
       // Create placeholder clause
-      clauses.push({
-        id: `clause-${section.id}-${Date.now()}`,
+      const placeholderClause: ClauseDraft = {
+        id: `clause-${section.id}-${Date.now()}-${clauses.length}`,
         sectionId: section.id,
         text: `[Текст для раздела "${section.title}" будет сгенерирован]`,
         order: clauses.length + 1,
-      });
+      };
+      clauses.push(placeholderClause);
+
+      // Save intermediate document even with placeholder
+      currentDocument = {
+        ...currentDocument,
+        clauses: [...clauses],
+        sections: skeleton.sections.map((s) => ({
+          ...s,
+          clauseIds: clauses.filter((c) => c.sectionId === s.id).map((c) => c.id),
+        })),
+        updatedAt: new Date(),
+      };
+      storage.saveDocument(currentDocument);
     }
   }
 
-  // Create or update document
-  const storage = getStorage();
-  let currentDocument = document;
-
-  if (!currentDocument) {
-    currentDocument = {
-      id: agentState.documentId,
-      mission: mission,
-      sections: skeleton.sections.map((s) => ({
-        ...s,
-        clauseIds: clauses.filter((c) => c.sectionId === s.id).map((c) => c.id),
-      })),
-      clauses: clauses,
-      stylePreset: stylePreset,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-  } else {
-    currentDocument = {
-      ...currentDocument,
-      clauses: clauses,
-      sections: skeleton.sections.map((s) => ({
-        ...s,
-        clauseIds: clauses.filter((c) => c.sectionId === s.id).map((c) => c.id),
-      })),
-      updatedAt: new Date(),
-    };
-  }
-
-  storage.saveDocument(currentDocument);
+  // Document is already saved incrementally, just ensure it's up to date
+  // (currentDocument was updated in the loop above)
 
   // Update state
   const updatedState = updateAgentStateData(agentState, {});

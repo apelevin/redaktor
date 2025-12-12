@@ -97,16 +97,30 @@ export class OpenRouterClient {
           all_usage_keys: Object.keys(data.usage),
         });
         
+        // Extract token counts - ensure we have both prompt and completion tokens
+        const promptTokens = data.usage.prompt_tokens || 0;
+        const completionTokens = data.usage.completion_tokens || 0;
+        const apiTotalTokens = data.usage.total_tokens || 0;
+        
+        // Calculate total as sum of prompt + completion for accuracy
+        // API might return total_tokens that includes other tokens, so we calculate our own
+        const calculatedTotalTokens = promptTokens + completionTokens;
+        
         usage = {
-          promptTokens: data.usage.prompt_tokens || 0,
-          completionTokens: data.usage.completion_tokens || 0,
-          totalTokens: data.usage.total_tokens || 0,
+          promptTokens: promptTokens,
+          completionTokens: completionTokens,
+          totalTokens: calculatedTotalTokens || apiTotalTokens, // Prefer calculated, fallback to API
           cost: cost,
           model: data.model || undefined, // Actual model used (for auto selection)
         };
         
+        // Verify token counts
+        if (apiTotalTokens > 0 && Math.abs(calculatedTotalTokens - apiTotalTokens) > 0) {
+          console.warn(`[OpenRouter] Token count mismatch: calculated=${calculatedTotalTokens}, API=${apiTotalTokens}`);
+        }
+        
         if (cost !== undefined) {
-          console.log(`[OpenRouter] Extracted cost: $${cost}`);
+          console.log(`[OpenRouter] Extracted cost: $${cost}, tokens: ${promptTokens} prompt + ${completionTokens} completion = ${calculatedTotalTokens} total`);
         } else {
           console.warn(`[OpenRouter] No cost found in response. Usage object:`, JSON.stringify(data.usage));
         }

@@ -94,6 +94,36 @@ export class AgentAPIClient {
       documentChanges,
     });
   }
+
+  /**
+   * Get current document state
+   */
+  async getDocument(documentId: string): Promise<LegalDocument | null> {
+    try {
+      const response = await fetch(`/api/document/${documentId}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null;
+        }
+        const error = await response.text();
+        throw new Error(`API error: ${response.status} - ${error}`);
+      }
+
+      const data = await response.json();
+      return data.document || null;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(`Failed to get document: ${error.message}`);
+      }
+      throw error;
+    }
+  }
 }
 
 export const agentClient = new AgentAPIClient();

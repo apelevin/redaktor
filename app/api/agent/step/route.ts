@@ -25,9 +25,17 @@ export async function POST(request: NextRequest) {
 
     // Extract cost and tokens from agent state
     const totalCost = result.state.internalData.totalCost as number | undefined;
-    const totalTokens = result.state.internalData.totalTokens as number | undefined;
     const promptTokens = result.state.internalData.promptTokens as number | undefined;
     const completionTokens = result.state.internalData.completionTokens as number | undefined;
+    
+    // Calculate totalTokens as sum of prompt + completion to ensure accuracy
+    // This ensures we always have correct total even if state.totalTokens is outdated
+    const calculatedTotalTokens = 
+      (promptTokens !== undefined && completionTokens !== undefined) 
+        ? promptTokens + completionTokens 
+        : (result.state.internalData.totalTokens as number | undefined);
+    
+    const totalTokens = calculatedTotalTokens;
     const lastModel = result.state.internalData.lastModel as string | undefined;
 
     // Load document from storage if it exists (even if not in documentPatch)
@@ -43,12 +51,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Debug logging
+    // Debug logging with token breakdown
     console.log(`[API] Extracted from state:`, {
       totalCost,
-      totalTokens,
-      promptTokens,
-      completionTokens,
+      tokens: {
+        prompt: promptTokens,
+        completion: completionTokens,
+        calculatedTotal: calculatedTotalTokens,
+        stateTotal: result.state.internalData.totalTokens,
+        finalTotal: totalTokens,
+      },
       lastModel,
       internalDataKeys: Object.keys(result.state.internalData),
       hasDocumentPatch: !!result.documentPatch,

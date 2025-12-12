@@ -64,20 +64,43 @@ export function updateUsageStats(
   const previousCost = internalData.totalCost || 0;
   const usageCost = usage.cost || 0;
   internalData.totalCost = previousCost + usageCost;
-  internalData.totalTokens = (internalData.totalTokens || 0) + usage.totalTokens;
-  internalData.promptTokens = (internalData.promptTokens || 0) + usage.promptTokens;
-  internalData.completionTokens = (internalData.completionTokens || 0) + usage.completionTokens;
   
-  // Debug logging
+  // Accumulate prompt and completion tokens separately
+  const previousPromptTokens = internalData.promptTokens || 0;
+  const previousCompletionTokens = internalData.completionTokens || 0;
+  internalData.promptTokens = previousPromptTokens + usage.promptTokens;
+  internalData.completionTokens = previousCompletionTokens + usage.completionTokens;
+  
+  // Calculate totalTokens as sum of prompt + completion for accuracy
+  // This ensures we count all tokens even if API returns different total_tokens
+  const calculatedTotalTokens = internalData.promptTokens + internalData.completionTokens;
+  const apiTotalTokens = usage.totalTokens || 0;
+  
+  // Use calculated total if it's more accurate, otherwise use API total
+  // API total might include other tokens (like system tokens), so we prefer calculated
+  internalData.totalTokens = calculatedTotalTokens;
+  
+  // Debug logging with detailed breakdown
   console.log(`[updateUsageStats] Cost update:`, {
     previousCost,
     usageCost,
     newTotalCost: internalData.totalCost,
+    tokens: {
+      previousPrompt: previousPromptTokens,
+      previousCompletion: previousCompletionTokens,
+      newPrompt: usage.promptTokens,
+      newCompletion: usage.completionTokens,
+      totalPrompt: internalData.promptTokens,
+      totalCompletion: internalData.completionTokens,
+      calculatedTotal: calculatedTotalTokens,
+      apiTotal: apiTotalTokens,
+      finalTotal: internalData.totalTokens,
+    },
     usage: {
       cost: usage.cost,
-      totalTokens: usage.totalTokens,
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
       model: usage.model,
     },
   });
