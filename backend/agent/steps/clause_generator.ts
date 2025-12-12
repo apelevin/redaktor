@@ -14,7 +14,7 @@ import type {
   ChatMessage,
 } from "@/lib/types";
 import { getOpenRouterClient } from "@/backend/llm/openrouter";
-import { updateAgentStateData, updateAgentStateStep } from "../state";
+import { updateAgentStateData, updateAgentStateStep, updateUsageStats } from "../state";
 import { getStorage } from "@/backend/storage/in-memory";
 
 export async function clauseGenerator(
@@ -36,14 +36,6 @@ export async function clauseGenerator(
 
   const llm = getOpenRouterClient();
   const clauses: ClauseDraft[] = [];
-  
-  // Initialize cost tracking if not exists
-  if (!agentState.internalData.totalCost) {
-    agentState.internalData.totalCost = 0;
-  }
-  if (!agentState.internalData.totalTokens) {
-    agentState.internalData.totalTokens = 0;
-  }
 
   // Generate clause for each requirement
   for (const requirement of requirements) {
@@ -167,6 +159,13 @@ async function generateClauseText(
 - Рекомендуемые элементы: ${requirement.recommendedElements.join(", ") || "нет"}
 ${requirement.riskNotes ? `- Примечания о рисках: ${requirement.riskNotes}` : ""}
 
+ВАЖНО - Форматирование:
+- Каждый пронумерованный подпункт (например, 1.1.1., 1.1.2., 1.2.1. и т.д.) ДОЛЖЕН начинаться с новой строки
+- Между подпунктами должен быть перенос строки (пустая строка или хотя бы один перенос)
+- НЕ размещайте несколько подпунктов на одной строке
+- Если в пункте есть несколько определений или подпунктов, каждый должен быть на отдельной строке
+- Используйте правильную нумерацию: каждый новый подпункт начинается с новой строки
+
 Верни только текст пункта, без дополнительных комментариев. Текст должен быть готов для использования в юридическом документе.`;
 
   const userPrompt = `Напиши текст пункта для раздела "${section.title}" согласно требованиям выше.`;
@@ -176,12 +175,35 @@ ${requirement.riskNotes ? `- Примечания о рисках: ${requirement
     { role: "user", content: userPrompt },
   ]);
 
-  // Update cost and tokens in agent state
+  // Update usage statistics in agent state
   if (result.usage) {
-    agentState.internalData.totalCost = (agentState.internalData.totalCost || 0) + (result.usage.cost || 0);
-    agentState.internalData.totalTokens = (agentState.internalData.totalTokens || 0) + result.usage.totalTokens;
+    agentState = updateUsageStats(agentState, result.usage);
   }
 
-  return result.content.trim();
+  // Post-process text to ensure proper formatting
+  let formattedText = result.content.trim();
+  
+  // Fix formatting: ensure each numbered sub-point starts on a new line
+  // Pattern: matches numbered sub-points like "1.1.1.", "1.2.3.", etc.
+  formattedText = formattedText.replace(/(\d+\.\d+\.\d+\.)/g, '\n$1');
+  
+  // Fix formatting: ensure sub-points like "1.1.", "1.2.", etc. start on new line
+  formattedText = formattedText.replace(/(\d+\.\d+\.)/g, '\n$1');
+  
+  // Fix formatting: ensure main points like "1.", "2.", etc. start on new line (if not at start)
+  formattedText = formattedText.replace(/([^\n])(\d+\.\s)/g, '$1\n$2');
+  
+  // Remove multiple consecutive newlines (more than 2)
+  formattedText = formattedText.replace(/\n{3,}/g, '\n\n');
+  
+  // Remove leading/trailing newlines
+  formattedText = formattedText.trim();
+  
+  // Ensure proper spacing: add newline before numbered points that are on the same line as previous text
+  // This handles cases like "text. 1.1.1." -> "text.\n1.1.1."
+  formattedText = formattedText.replace(/([^.\n])(\s+)(\d+\.\d+\.\d+\.)/g, '$1\n$3');
+  formattedText = formattedText.replace(/([^.\n])(\s+)(\d+\.\d+\.)/g, '$1\n$3');
+  
+  return formattedText;
 }
 

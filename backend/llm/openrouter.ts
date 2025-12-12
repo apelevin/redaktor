@@ -81,13 +81,37 @@ export class OpenRouterClient {
       // Extract usage information
       let usage: OpenRouterUsage | undefined;
       if (data.usage) {
+        // Check all possible cost fields in OpenRouter response
+        const cost = data.usage.total_cost ?? 
+                     data.usage.cost ?? 
+                     (data.usage as any).totalCost ?? 
+                     undefined;
+        
+        // Log usage details for debugging
+        console.log(`[OpenRouter] Usage data:`, {
+          prompt_tokens: data.usage.prompt_tokens,
+          completion_tokens: data.usage.completion_tokens,
+          total_tokens: data.usage.total_tokens,
+          total_cost: data.usage.total_cost,
+          cost: data.usage.cost,
+          all_usage_keys: Object.keys(data.usage),
+        });
+        
         usage = {
           promptTokens: data.usage.prompt_tokens || 0,
           completionTokens: data.usage.completion_tokens || 0,
           totalTokens: data.usage.total_tokens || 0,
-          cost: data.usage.total_cost || undefined,
+          cost: cost,
           model: data.model || undefined, // Actual model used (for auto selection)
         };
+        
+        if (cost !== undefined) {
+          console.log(`[OpenRouter] Extracted cost: $${cost}`);
+        } else {
+          console.warn(`[OpenRouter] No cost found in response. Usage object:`, JSON.stringify(data.usage));
+        }
+      } else {
+        console.warn(`[OpenRouter] No usage data in response`);
       }
 
       // Log which model was actually used (important for auto selection)

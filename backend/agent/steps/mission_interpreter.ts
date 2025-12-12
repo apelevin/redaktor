@@ -12,7 +12,7 @@ import type {
   ChatMessage,
 } from "@/lib/types";
 import { getOpenRouterClient } from "@/backend/llm/openrouter";
-import { updateAgentStateData, updateAgentStateStep } from "../state";
+import { updateAgentStateData, updateAgentStateStep, updateUsageStats } from "../state";
 
 export async function missionInterpreter(
   userMessage: string,
@@ -29,6 +29,17 @@ export async function missionInterpreter(
       state: agentState, // Return state with current step, pipeline will advance it
       chatMessages: [],
     };
+  }
+
+  // Check if we have a user answer from a previous question
+  const lastAnswer = agentState.internalData.lastAnswer as any;
+  let inputMessage = userMessage;
+  
+  if (lastAnswer && lastAnswer.freeText) {
+    // User provided answer via text input fields
+    // Combine the original message with the answer
+    inputMessage = `${userMessage || ""}\n\nДополнительная информация от пользователя:\n${lastAnswer.freeText}`;
+    console.log("[mission_interpreter] Using answer from question:", lastAnswer.freeText);
   }
 
   // Try to extract mission from user message
@@ -52,25 +63,17 @@ export async function missionInterpreter(
 - Если какая-то информация не указана явно, используй null. Для jurisdiction используй "OTHER" только если действительно не можешь определить.`;
 
   try {
-    console.log("[mission_interpreter] Calling LLM with message:", userMessage);
-    
-    // Initialize cost tracking if not exists
-    if (!agentState.internalData.totalCost) {
-      agentState.internalData.totalCost = 0;
-    }
-    if (!agentState.internalData.totalTokens) {
-      agentState.internalData.totalTokens = 0;
-    }
+    console.log("[mission_interpreter] Calling LLM with message:", inputMessage);
     
     const result = await llm.chatJSON<Partial<LegalDocumentMission>>([
       { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
+      { role: "user", content: inputMessage },
     ]);
     const response = result.data;
+    
+    // Update usage statistics
     if (result.usage) {
-      // Store usage in agent state
-      agentState.internalData.totalCost = (agentState.internalData.totalCost || 0) + (result.usage.cost || 0);
-      agentState.internalData.totalTokens = (agentState.internalData.totalTokens || 0) + result.usage.totalTokens;
+      agentState = updateUsageStats(agentState, result.usage);
     }
     console.log("[mission_interpreter] LLM response:", JSON.stringify(response, null, 2));
 
@@ -84,18 +87,27 @@ export async function missionInterpreter(
     }
 
     if (missingFields.length > 0) {
-      // Need to ask user
+      // Need to ask user - create options with text input fields
       const question: UserQuestion = {
         id: `question-${Date.now()}`,
-        type: "single_choice",
+        type: missingFields.length === 1 ? "single_choice" : "multi_choice",
         title: "Уточнение информации о документе",
         text: `Для создания документа мне нужна дополнительная информация: ${missingFields.join(", ")}.`,
         legalImpact: "Эта информация влияет на структуру и содержание документа.",
-        options: missingFields.map((field, idx) => ({
-          id: `option-${idx}`,
-          label: field,
-          description: `Укажите ${field}`,
-        })),
+        options: missingFields.map((field, idx) => {
+          const fieldId = field.toLowerCase().replace(/\s+/g, "_");
+          return {
+            id: `option-${fieldId}`,
+            label: field,
+            description: `Укажите ${field}`,
+            requiresInput: true,
+            inputPlaceholder: field === "тип документа" 
+              ? "Например: договор продажи автомобиля, трудовой договор, NDA"
+              : field === "юрисдикция"
+              ? "Например: RU, US, EU, UK"
+              : `Введите ${field}`,
+          };
+        }),
       };
 
       // For now, create a simple question - in real implementation, this would be more sophisticated

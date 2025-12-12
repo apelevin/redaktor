@@ -40,6 +40,9 @@ export default function DocumentViewer({
     );
   }
 
+  // Show document even if sections/clauses are empty (document structure exists)
+  // Document should be displayed as soon as it's created, even if not fully populated
+
   return (
     <div className="document-viewer">
       <div className="document-header">
@@ -58,9 +61,10 @@ export default function DocumentViewer({
       </div>
 
       <div className="document-content">
-        {document.sections
-          .sort((a, b) => a.order - b.order)
-          .map((section) => {
+        {document.sections && document.sections.length > 0 ? (
+          document.sections
+            .sort((a, b) => a.order - b.order)
+            .map((section) => {
             const isHighlighted = section.id === highlightedSectionId;
             const clauses = document.clauses
               .filter((c) => c.sectionId === section.id)
@@ -97,7 +101,14 @@ export default function DocumentViewer({
                 })}
               </div>
             );
-          })}
+          })
+        ) : (
+          <div className="document-section">
+            <p className="empty-message">
+              Документ создан. Разделы будут добавлены по мере работы агента.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

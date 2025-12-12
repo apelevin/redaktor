@@ -22,6 +22,8 @@ export default function Home() {
     error: undefined,
     totalCost: 0,
     totalTokens: 0,
+    promptTokens: 0,
+    completionTokens: 0,
   });
 
   const handleAgentResult = useCallback((result: any) => {
@@ -31,12 +33,35 @@ export default function Home() {
       // Update agent state
       newState.agentState = result.state;
       
+      // Debug logging
+      console.log(`[Frontend] Received result:`, {
+        totalCost: result.totalCost,
+        totalTokens: result.totalTokens,
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        lastModel: result.lastModel,
+        prevTotalCost: prev.totalCost,
+      });
+      
       // Update cost and tokens if provided
-      if (result.totalCost !== undefined) {
+      // Use nullish coalescing to allow 0 values
+      if (result.totalCost !== undefined && result.totalCost !== null) {
         newState.totalCost = result.totalCost;
+        console.log(`[Frontend] Updated totalCost to: ${newState.totalCost}`);
+      } else {
+        console.warn(`[Frontend] totalCost is undefined or null, keeping previous value: ${prev.totalCost}`);
       }
       if (result.totalTokens !== undefined) {
         newState.totalTokens = result.totalTokens;
+      }
+      if (result.promptTokens !== undefined) {
+        newState.promptTokens = result.promptTokens;
+      }
+      if (result.completionTokens !== undefined) {
+        newState.completionTokens = result.completionTokens;
+      }
+      if (result.lastModel !== undefined) {
+        newState.lastModel = result.lastModel;
       }
       
       // Add chat messages
@@ -46,28 +71,54 @@ export default function Home() {
       ];
       
       // Update document
+      console.log(`[Frontend] Document update logic:`, {
+        resultType: result.type,
+        hasDocumentPatch: !!result.documentPatch,
+        prevDocument: !!prev.document,
+        documentPatchId: result.documentPatch?.id,
+        documentPatchSections: result.documentPatch?.sections?.length,
+        documentPatchClauses: result.documentPatch?.clauses?.length,
+      });
+
       if (result.type === "continue" || result.type === "need_user_input") {
         if (result.documentPatch) {
-          if (prev.document) {
+          // Always update document if documentPatch is provided
+          if (result.documentPatch.id && result.documentPatch.mission) {
+            // Merge with previous document if it exists, or create new one
+            newState.document = {
+              ...(prev.document || {}),
+              id: result.documentPatch.id,
+              mission: result.documentPatch.mission,
+              sections: result.documentPatch.sections || prev.document?.sections || [],
+              clauses: result.documentPatch.clauses || prev.document?.clauses || [],
+              stylePreset: result.documentPatch.stylePreset || prev.document?.stylePreset || { name: "default", language: "ru" },
+              createdAt: prev.document?.createdAt || new Date(),
+              updatedAt: new Date(),
+            };
+            console.log(`[Frontend] Updated document:`, {
+              id: newState.document.id,
+              sections: newState.document.sections.length,
+              clauses: newState.document.clauses.length,
+            });
+          } else if (prev.document) {
+            // Merge patch into existing document
             newState.document = {
               ...prev.document,
               ...result.documentPatch,
-            };
-          } else if (result.documentPatch.id && result.documentPatch.mission) {
-            // Create new document from patch if it contains required fields
-            newState.document = {
-              id: result.documentPatch.id,
-              mission: result.documentPatch.mission!,
-              sections: result.documentPatch.sections || [],
-              clauses: result.documentPatch.clauses || [],
-              stylePreset: result.documentPatch.stylePreset!,
-              createdAt: new Date(),
               updatedAt: new Date(),
             };
+            console.log(`[Frontend] Merged documentPatch into existing document`);
           }
+        } else {
+          console.log(`[Frontend] No documentPatch provided, keeping previous document`);
         }
       } else if (result.type === "finished") {
         newState.document = result.document;
+        console.log(`[Frontend] Document finished, set to:`, {
+          id: result.document.id,
+          sections: result.document.sections.length,
+          clauses: result.document.clauses.length,
+        });
       }
       
       // Handle pending question
@@ -146,18 +197,6 @@ export default function Home() {
 
   return (
     <main className="main-container">
-      {/* Cost display in top right */}
-      {(state.totalCost !== undefined || state.totalTokens !== undefined) && (
-        <div className="cost-display">
-          {state.totalCost !== undefined && state.totalCost > 0 && (
-            <span className="cost-amount">${state.totalCost.toFixed(4)}</span>
-          )}
-          {state.totalTokens !== undefined && state.totalTokens > 0 && (
-            <span className="token-count">{state.totalTokens.toLocaleString()} токенов</span>
-          )}
-        </div>
-      )}
-      
       {state.error && (
         <div className="error-banner">
           <span>Ошибка: {state.error}</span>
@@ -172,6 +211,8 @@ export default function Home() {
           document={state.document}
           highlightedSectionId={state.pendingQuestion?.relatesToSectionId}
           highlightedClauseId={state.pendingQuestion?.relatesToClauseId}
+          totalCost={state.totalCost}
+          lastModel={state.lastModel}
         />
         <ChatPane
           messages={state.chatMessages}

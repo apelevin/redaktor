@@ -4,6 +4,7 @@
  */
 
 import type { AgentState } from "@/lib/types";
+import type { OpenRouterUsage } from "@/backend/llm/openrouter";
 
 export function createInitialAgentState(documentId: string): AgentState {
   return {
@@ -33,6 +34,62 @@ export function updateAgentStateData(
       ...state.internalData,
       ...data,
     },
+  };
+}
+
+/**
+ * Update usage statistics in agent state
+ */
+export function updateUsageStats(
+  state: AgentState,
+  usage: OpenRouterUsage
+): AgentState {
+  const internalData = { ...state.internalData };
+  
+  // Initialize if not exists
+  if (typeof internalData.totalCost !== "number") {
+    internalData.totalCost = 0;
+  }
+  if (typeof internalData.totalTokens !== "number") {
+    internalData.totalTokens = 0;
+  }
+  if (typeof internalData.promptTokens !== "number") {
+    internalData.promptTokens = 0;
+  }
+  if (typeof internalData.completionTokens !== "number") {
+    internalData.completionTokens = 0;
+  }
+  
+  // Update totals
+  const previousCost = internalData.totalCost || 0;
+  const usageCost = usage.cost || 0;
+  internalData.totalCost = previousCost + usageCost;
+  internalData.totalTokens = (internalData.totalTokens || 0) + usage.totalTokens;
+  internalData.promptTokens = (internalData.promptTokens || 0) + usage.promptTokens;
+  internalData.completionTokens = (internalData.completionTokens || 0) + usage.completionTokens;
+  
+  // Debug logging
+  console.log(`[updateUsageStats] Cost update:`, {
+    previousCost,
+    usageCost,
+    newTotalCost: internalData.totalCost,
+    usage: {
+      cost: usage.cost,
+      totalTokens: usage.totalTokens,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      model: usage.model,
+    },
+  });
+  
+  // Store last used model
+  if (usage.model) {
+    internalData.lastModel = usage.model;
+  }
+  
+  return {
+    ...state,
+    internalData,
   };
 }
 

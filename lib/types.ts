@@ -85,6 +85,8 @@ export interface QuestionOption {
   description?: string;
   riskLevel?: "low" | "medium" | "high";
   isRecommended?: boolean;
+  requiresInput?: boolean; // If true, show text input field for this option
+  inputPlaceholder?: string; // Placeholder text for input field
 }
 
 export interface UserQuestion {
@@ -158,6 +160,9 @@ export interface UIState {
   error?: string;
   totalCost?: number; // Total cost in USD
   totalTokens?: number; // Total tokens used
+  promptTokens?: number; // Total prompt tokens used
+  completionTokens?: number; // Total completion tokens used
+  lastModel?: string; // Last model used
 }
 
 // API request/response types
@@ -172,5 +177,8 @@ export interface AgentStepResponse {
   result: AgentStepResult;
   totalCost?: number; // Total cost in USD
   totalTokens?: number; // Total tokens used
+  promptTokens?: number; // Total prompt tokens used
+  completionTokens?: number; // Total completion tokens used
+  lastModel?: string; // Last model used
 }
 

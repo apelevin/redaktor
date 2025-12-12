@@ -13,7 +13,7 @@ import type {
   Issue,
 } from "@/lib/types";
 import { getOpenRouterClient } from "@/backend/llm/openrouter";
-import { updateAgentStateData, updateAgentStateStep } from "../state";
+import { updateAgentStateData, updateAgentStateStep, updateUsageStats } from "../state";
 
 interface SkeletonResponse {
   sections: Array<{
@@ -44,14 +44,6 @@ export async function skeletonGenerator(
   }
 
   const llm = getOpenRouterClient();
-  
-  // Initialize cost tracking if not exists
-  if (!agentState.internalData.totalCost) {
-    agentState.internalData.totalCost = 0;
-  }
-  if (!agentState.internalData.totalTokens) {
-    agentState.internalData.totalTokens = 0;
-  }
 
   // Generate skeleton using LLM
   const systemPrompt = `Ты - эксперт по юридическим документам. Твоя задача - создать структуру документа (список разделов).
@@ -92,8 +84,7 @@ ${issuesList}
     ]);
     
     if (result.usage) {
-      agentState.internalData.totalCost = (agentState.internalData.totalCost || 0) + (result.usage.cost || 0);
-      agentState.internalData.totalTokens = (agentState.internalData.totalTokens || 0) + result.usage.totalTokens;
+      agentState = updateUsageStats(agentState, result.usage);
     }
 
     const response = result.data;

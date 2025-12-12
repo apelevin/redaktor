@@ -14,6 +14,9 @@ import type {
 export interface AgentStepResponseWithCost extends AgentStepResult {
   totalCost?: number;
   totalTokens?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  lastModel?: string;
 }
 
 export class AgentAPIClient {
@@ -41,11 +44,27 @@ export class AgentAPIClient {
       }
 
       const data: AgentStepResponse = await response.json();
-      return {
+      
+      // Debug logging
+      console.log(`[API Client] Received response:`, {
+        totalCost: data.totalCost,
+        totalTokens: data.totalTokens,
+        promptTokens: data.promptTokens,
+        completionTokens: data.completionTokens,
+        lastModel: data.lastModel,
+      });
+      
+      const result = {
         ...data.result,
         totalCost: data.totalCost,
         totalTokens: data.totalTokens,
+        promptTokens: data.promptTokens,
+        completionTokens: data.completionTokens,
+        lastModel: data.lastModel,
       };
+      
+      console.log(`[API Client] Returning result with totalCost:`, result.totalCost);
+      return result;
     } catch (error) {
       if (error instanceof Error) {
         throw new Error(`Failed to call agent step: ${error.message}`);

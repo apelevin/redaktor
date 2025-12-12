@@ -8,29 +8,59 @@
 }
 
 .cost-display {
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
   background-color: white;
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
+  padding: 0.5rem 0.75rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
   display: flex;
   flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  min-width: 160px;
+  max-width: 200px;
+  box-sizing: content-box;
+}
+
+.cost-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid var(--border-color);
+  gap: 0.5rem;
+}
+
+.cost-title {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 0.75rem;
+}
+
+.cost-model {
+  font-size: 0.625rem;
+  color: #6b7280;
+  background-color: #f3f4f6;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-family: monospace;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cost-main {
+  display: flex;
+  align-items: baseline;
   gap: 0.25rem;
-  font-size: 0.875rem;
 }
 
 .cost-amount {
-  font-weight: 600;
-  color: #2563eb;
-}
-
-.token-count {
-  color: #6b7280;
-  font-size: 0.75rem;
+  font-weight: 300;
+  color: rgba(0, 0, 0, 1);
+  font-size: 12px;
+  line-height: 1;
 }
 
 .error-banner {
@@ -73,6 +103,13 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
+}
+
+.document-header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
 }
 
 .document-pane-header h1 {
@@ -171,6 +208,7 @@
 .clause-text {
   line-height: 1.6;
   margin-bottom: 0.5rem;
+  white-space: pre-line; /* Preserve line breaks and wrap text */
 }
 
 .clause-reasoning {
