@@ -11,6 +11,7 @@ export default function Home() {
   const [nextAction, setNextAction] = useState<NextAction | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingSkeleton, setIsGeneratingSkeleton] = useState(false);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   // Создаем сессию при загрузке
   useEffect(() => {
@@ -93,6 +94,79 @@ export default function Home() {
     }
   };
 
+  const handleStartReview = async () => {
+    if (!sessionId) return;
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/session/${sessionId}/review/plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start review');
+      }
+
+      const data = await response.json();
+      setState(data.state);
+      setNextAction(data.next_action);
+    } catch (error) {
+      console.error('Error starting review:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmitReviewAnswers = async (answers: any[]) => {
+    if (!sessionId || isSubmittingReview) {
+      console.warn('Cannot submit review answers: sessionId missing or already submitting');
+      return;
+    }
+
+    if (!answers || answers.length === 0) {
+      console.warn('No answers to submit');
+      return;
+    }
+
+    setIsSubmittingReview(true);
+    try {
+      const response = await fetch(`/api/session/${sessionId}/review/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.message || errorData.error || `Failed to apply review answers: ${response.status}`;
+        
+        // Если review уже frozen, это нормально - просто обновляем state
+        if (errorData.error === 'Review is already frozen' || errorMessage.includes('frozen')) {
+          // Обновляем state, чтобы получить актуальное состояние
+          const getResponse = await fetch(`/api/session/${sessionId}`);
+          if (getResponse.ok) {
+            const getData = await getResponse.json();
+            setState(getData.state);
+            setNextAction(getData.next_action);
+            return;
+          }
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      setState(data.state);
+      setNextAction(data.next_action);
+    } catch (error) {
+      console.error('Error submitting review answers:', error);
+      // Можно показать пользователю сообщение об ошибке
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       {/* Левая панель - 2/3 экрана */}
@@ -101,6 +175,9 @@ export default function Home() {
           state={state} 
           onGenerateSkeleton={handleGenerateSkeleton}
           isGeneratingSkeleton={isGeneratingSkeleton}
+          onStartReview={handleStartReview}
+          onSubmitReviewAnswers={handleSubmitReviewAnswers}
+          isSubmittingReview={isSubmittingReview}
         />
       </div>
 

@@ -9,7 +9,7 @@
     "output_id": { "type": "string" },
     "step": {
       "type": "string",
-      "enum": ["INTERPRET", "GATE_CHECK", "SKELETON_GENERATE"]
+      "enum": ["INTERPRET", "GATE_CHECK", "SKELETON_GENERATE", "SKELETON_REVIEW_PLAN", "SKELETON_REVIEW_APPLY"]
     },
     "patch": {
       "type": "object",

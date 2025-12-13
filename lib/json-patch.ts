@@ -5,35 +5,58 @@ import { Patch, PreSkeletonState } from './types';
  * Применяет patch к state
  */
 export function applyPatch(state: PreSkeletonState, patch: Patch): PreSkeletonState {
-  if (patch.format === 'json_patch') {
-    // JSON Patch (RFC 6902)
-    const ops = patch.ops as Operation[];
-    
-    // Логируем для отладки
-    console.log('[applyPatch] Applying JSON Patch with', ops.length, 'operations');
-    
-    // Защита: не позволяем изменять dialogue.history напрямую (только append)
-    const protectedPaths = ['/dialogue/history'];
-    const hasProtectedOps = ops.some((op) => 
-      protectedPaths.some((path) => op.path.startsWith(path) && (op.op === 'remove' || op.op === 'replace'))
-    );
-    
-    if (hasProtectedOps) {
-      throw new Error('Cannot modify protected paths (dialogue.history) via patch. Use append operations only.');
-    }
-    
-    // Предварительно создаем недостающие пути для операций 'add'
-    // Это необходимо, так как fast-json-patch не создает промежуточные объекты автоматически
-    const stateClone = JSON.parse(JSON.stringify(state)) as PreSkeletonState;
-    for (const op of ops) {
-      if (op.op === 'add' && op.path) {
-        ensurePathExists(stateClone, op.path);
+  try {
+    if (patch.format === 'json_patch') {
+      // JSON Patch (RFC 6902)
+      const ops = patch.ops as Operation[];
+      
+      // Логируем для отладки
+      console.log('[applyPatch] Applying JSON Patch with', ops.length, 'operations');
+      
+      // Защита: не позволяем изменять dialogue.history напрямую (только append)
+      const protectedPaths = ['/dialogue/history'];
+      const hasProtectedOps = ops.some((op) => 
+        protectedPaths.some((path) => op.path.startsWith(path) && (op.op === 'remove' || op.op === 'replace'))
+      );
+      
+      if (hasProtectedOps) {
+        throw new Error('Cannot modify protected paths (dialogue.history) via patch. Use append operations only.');
       }
-    }
-    
-    // Применяем patch
-    // mutateDocument = false означает, что мы не изменяем оригинал
-    const result = applyJsonPatch(stateClone, ops, false, false);
+      
+      // Предварительно создаем недостающие пути для операций 'add' и 'replace'
+      // Это необходимо, так как fast-json-patch не создает промежуточные объекты автоматически
+      const stateClone = JSON.parse(JSON.stringify(state)) as PreSkeletonState;
+      
+      // Убеждаемся, что domain инициализирован
+      if (!stateClone.domain) {
+        stateClone.domain = {};
+      }
+      
+      for (const op of ops) {
+        // Для операций 'add' и 'replace' нужно убедиться, что путь существует
+        if ((op.op === 'add' || op.op === 'replace') && op.path) {
+          try {
+            ensurePathExists(stateClone, op.path);
+          } catch (error) {
+            console.error(`[applyPatch] Failed to ensure path exists: ${op.path}`, error);
+            console.error(`[applyPatch] Operation:`, JSON.stringify(op, null, 2));
+            console.error(`[applyPatch] State clone keys:`, Object.keys(stateClone));
+            throw new Error(`Failed to ensure path exists for operation: ${JSON.stringify(op)}. Error: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+      }
+      
+      // Применяем patch
+      // mutateDocument = false означает, что мы не изменяем оригинал
+      let result: OperationResult[];
+      try {
+        result = applyJsonPatch(stateClone, ops, false, false);
+      } catch (error) {
+        console.error('[applyPatch] Failed to apply JSON Patch:', error);
+        console.error('[applyPatch] Operations:', JSON.stringify(ops, null, 2));
+        console.error('[applyPatch] State keys:', Object.keys(stateClone));
+        throw new Error(`Failed to apply JSON Patch: ${error instanceof Error ? error.message : String(error)}`);
+      }
     
     // Проверяем на ошибки
     // result - это массив OperationResult, проверяем каждый на наличие error
@@ -78,28 +101,34 @@ export function applyPatch(state: PreSkeletonState, patch: Patch): PreSkeletonSt
     updated.meta.updated_at = new Date().toISOString();
     updated.meta.state_version = (updated.meta.state_version || 0) + 1;
     
-    return updated;
-  } else {
-    // Merge Patch (RFC 7396)
-    let mergeOps = patch.ops as Record<string, unknown>;
-    
-    // Обрабатываем пути с "/" (неправильный формат, но поддерживаем для совместимости)
-    // Если есть ключи вида "/gate", преобразуем их в "gate"
-    const normalizedOps: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(mergeOps)) {
-      const normalizedKey = key.startsWith('/') ? key.slice(1) : key;
-      normalizedOps[normalizedKey] = value;
+      return updated;
+    } else {
+      // Merge Patch (RFC 7396)
+      let mergeOps = patch.ops as Record<string, unknown>;
+      
+      // Обрабатываем пути с "/" (неправильный формат, но поддерживаем для совместимости)
+      // Если есть ключи вида "/gate", преобразуем их в "gate"
+      const normalizedOps: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(mergeOps)) {
+        const normalizedKey = key.startsWith('/') ? key.slice(1) : key;
+        normalizedOps[normalizedKey] = value;
+      }
+      mergeOps = normalizedOps;
+      
+      // Рекурсивное слияние
+      const merged = deepMerge(state, mergeOps) as PreSkeletonState;
+      
+      // Обновляем метаданные
+      merged.meta.updated_at = new Date().toISOString();
+      merged.meta.state_version = (merged.meta.state_version || 0) + 1;
+      
+      return merged;
     }
-    mergeOps = normalizedOps;
-    
-    // Рекурсивное слияние
-    const merged = deepMerge(state, mergeOps) as PreSkeletonState;
-    
-    // Обновляем метаданные
-    merged.meta.updated_at = new Date().toISOString();
-    merged.meta.state_version = (merged.meta.state_version || 0) + 1;
-    
-    return merged;
+  } catch (error) {
+    console.error('[applyPatch] Error applying patch:', error);
+    console.error('[applyPatch] Patch:', JSON.stringify(patch, null, 2));
+    console.error('[applyPatch] State keys:', Object.keys(state));
+    throw new Error(`Failed to apply patch: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -116,12 +145,85 @@ function ensurePathExists(obj: any, path: string): void {
   // Убираем последний элемент (это то, что мы хотим добавить)
   const pathToCreate = parts.slice(0, -1);
   
+  if (pathToCreate.length === 0) return; // Путь уже на корневом уровне
+  
   let current = obj;
-  for (const part of pathToCreate) {
-    if (!current[part] || typeof current[part] !== 'object' || Array.isArray(current[part])) {
-      current[part] = {};
+  
+  // Проверяем, что obj не undefined/null
+  if (current === undefined || current === null) {
+    throw new Error(`Cannot create path ${path}: root object is ${current}`);
+  }
+  
+  for (let i = 0; i < pathToCreate.length; i++) {
+    const part = pathToCreate[i];
+    
+    // Если current стал undefined/null, это ошибка
+    if (current === undefined || current === null) {
+      throw new Error(`Cannot create path ${path}: intermediate object at ${pathToCreate.slice(0, i).join('/')} is ${current}`);
     }
-    current = current[part];
+    
+    // Проверяем, является ли текущая часть индексом массива
+    const isCurrentPartArrayIndex = /^\d+$/.test(part);
+    const nextPart = i < pathToCreate.length - 1 ? pathToCreate[i + 1] : null;
+    const isNextPartArrayIndex = nextPart && /^\d+$/.test(nextPart);
+    
+    // Если current - это массив, и part - это индекс
+    if (Array.isArray(current) && isCurrentPartArrayIndex) {
+      const index = parseInt(part, 10);
+      // Если индекс выходит за границы массива, расширяем массив
+      while (current.length <= index) {
+        current.push(null);
+      }
+      // Если элемент null или не объект, заменяем на объект
+      if (current[index] === null || typeof current[index] !== 'object' || Array.isArray(current[index])) {
+        current[index] = isNextPartArrayIndex ? [] : {};
+      }
+      current = current[index];
+    } else if (!(part in current)) {
+      // Свойства нет - создаем объект или массив в зависимости от следующей части
+      current[part] = isNextPartArrayIndex ? [] : {};
+      current = current[part];
+    } else if (current[part] === null) {
+      // null заменяем на объект/массив
+      current[part] = isNextPartArrayIndex ? [] : {};
+      current = current[part];
+    } else if (Array.isArray(current[part])) {
+      // Если это массив, оставляем как есть (не перезаписываем)
+      // Но если следующий элемент не индекс, это ошибка
+      if (!isNextPartArrayIndex && nextPart) {
+        console.warn(`[ensurePathExists] Path ${path}: part ${part} is array but next part ${nextPart} is not an index. Keeping array.`);
+      }
+      current = current[part];
+    } else if (typeof current[part] !== 'object') {
+      // Если это не объект и не массив, заменяем на объект
+      console.warn(`[ensurePathExists] Path ${path}: part ${part} is ${typeof current[part]}, replacing with object.`);
+      current[part] = isNextPartArrayIndex ? [] : {};
+      current = current[part];
+    } else {
+      // Это объект, просто переходим к нему
+      current = current[part];
+    }
+    
+    // Проверяем, что current не стал undefined/null после присваивания
+    if (current === undefined || current === null) {
+      // Это не должно происходить, но на всякий случай
+      current = isNextPartArrayIndex ? [] : {};
+      // Устанавливаем обратно
+      const parentPath = pathToCreate.slice(0, i);
+      let parent = obj;
+      for (const p of parentPath) {
+        if (Array.isArray(parent) && /^\d+$/.test(p)) {
+          parent = parent[parseInt(p, 10)];
+        } else {
+          parent = parent[p];
+        }
+      }
+      if (Array.isArray(parent) && /^\d+$/.test(part)) {
+        parent[parseInt(part, 10)] = current;
+      } else {
+        parent[part] = current;
+      }
+    }
   }
 }
 

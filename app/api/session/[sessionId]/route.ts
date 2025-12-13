@@ -55,6 +55,7 @@ export async function POST(
     
     // Логируем для отладки
     const storage = getSessionStorage();
+    console.log(`[POST /api/session/${sessionId}] Processing message:`, body.message?.substring(0, 100));
     console.log(`[POST /api/session/${sessionId}] Available sessions:`, storage.getAllSessionIds());
     
     if (!body.message || typeof body.message !== 'string') {
@@ -64,7 +65,9 @@ export async function POST(
       );
     }
     
+    console.log(`[POST /api/session/${sessionId}] Calling processUserMessage...`);
     const result = await processUserMessage(sessionId, body.message);
+    console.log(`[POST /api/session/${sessionId}] processUserMessage completed successfully`);
     
     const response: SendMessageResponse = {
       state: result.state,
@@ -73,7 +76,13 @@ export async function POST(
     
     return NextResponse.json(response);
   } catch (error) {
-    console.error('Error processing message:', error);
+    console.error('[POST /api/session] Error processing message:', error);
+    console.error('[POST /api/session] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    console.error('[POST /api/session] Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : 'Unknown',
+      sessionId: params.sessionId,
+    });
     
     if (error instanceof Error && error.message.includes('Session not found')) {
       return NextResponse.json(
@@ -86,6 +95,9 @@ export async function POST(
       {
         error: 'Failed to process message',
         message: error instanceof Error ? error.message : 'Unknown error',
+        details: process.env.NODE_ENV === 'development' 
+          ? (error instanceof Error ? error.stack : String(error))
+          : undefined,
       },
       { status: 500 }
     );

@@ -6,6 +6,10 @@ import preSkeletonStateSchema from './pre_skeleton_state.schema.json';
 import llmStepOutputSchema from './llm_step_output.schema.json';
 // @ts-ignore - JSON imports
 import contractSkeletonSchema from './contract_skeleton.schema.json';
+// @ts-ignore - JSON imports
+import skeletonReviewQuestionsSchema from './skeleton_review_questions.schema.json';
+// @ts-ignore - JSON imports
+import skeletonReviewAnswersSchema from './skeleton_review_answers.schema.json';
 
 export interface SchemaRecord {
   schema_id: string;
@@ -40,6 +44,18 @@ const SCHEMA_REGISTRY: SchemaRecord[] = [
     schema_version: '1.0.0',
     compatibility: 'backward_compatible',
     schema: contractSkeletonSchema,
+  },
+  {
+    schema_id: 'schema://legalagi/skeleton_review_questions/1.0.0',
+    schema_version: '1.0.0',
+    compatibility: 'backward_compatible',
+    schema: skeletonReviewQuestionsSchema,
+  },
+  {
+    schema_id: 'schema://legalagi/skeleton_review_answers/1.0.0',
+    schema_version: '1.0.0',
+    compatibility: 'backward_compatible',
+    schema: skeletonReviewAnswersSchema,
   },
 ];
 

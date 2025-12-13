@@ -67,12 +67,53 @@
           "type": "string",
           "description": "Опциональные заметки для генератора текста"
         },
+        "status": {
+          "type": "string",
+          "enum": ["active", "omitted"],
+          "default": "active",
+          "description": "Статус узла: active - включен, omitted - исключен из структуры"
+        },
+        "variants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Variant" },
+          "description": "Структурные варианты узла (например, short/full версии)"
+        },
+        "selected_variant_id": {
+          "type": "string",
+          "description": "ID выбранного варианта (если есть variants)"
+        },
         "children": {
           "type": "array",
           "items": {
             "$ref": "#/$defs/SkeletonNode"
           },
           "description": "Вложенные узлы"
+        }
+      }
+    },
+    "Variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variant_id", "label", "children"],
+      "properties": {
+        "variant_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Уникальный идентификатор варианта"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Название варианта"
+        },
+        "description": {
+          "type": "string",
+          "description": "Описание варианта"
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SkeletonNode" },
+          "description": "Дочерние узлы для этого варианта"
         }
       }
     }

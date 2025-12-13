@@ -23,7 +23,7 @@
         "schema_version": { "type": "string" },
         "stage": {
           "type": "string",
-          "enum": ["pre_skeleton", "skeleton_ready"]
+          "enum": ["pre_skeleton", "skeleton_ready", "skeleton_review", "skeleton_final"]
         },
         "locale": {
           "type": "object",
@@ -141,6 +141,63 @@
             "generated_by_step": { "type": "string" },
             "node_count": { "type": "integer", "minimum": 1 }
           }
+        },
+        "skeleton_final": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["root"],
+          "description": "Final skeleton after review. Validated separately by contract_skeleton schema."
+        },
+        "freeze": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "structure": {
+              "type": "boolean",
+              "description": "If true, structure cannot be modified (no new sections/clauses can be added)"
+            }
+          }
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "description": "Optional. Skeleton review questions and answers.",
+      "additionalProperties": false,
+      "properties": {
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["question_id", "title", "ux", "binding", "priority"],
+            "description": "Review question. Validated separately by skeleton_review_questions schema."
+          }
+        },
+        "answers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["question_id", "value", "at"],
+            "description": "Review answer. Validated separately by skeleton_review_answers schema."
+          }
+        },
+        "iteration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Current review iteration number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["collecting", "ready_to_apply", "applied", "frozen"],
+          "description": "Review status"
+        },
+        "review_id": {
+          "type": "string",
+          "minLength": 6,
+          "description": "Unique review session identifier"
         }
       }
     }

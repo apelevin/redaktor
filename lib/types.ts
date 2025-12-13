@@ -16,13 +16,14 @@ export interface PreSkeletonState {
   control: Control;
   gate?: Gate;
   document?: DocumentState;
+  review?: ReviewState;
 }
 
 export interface StateMeta {
   session_id: string;
   schema_id: string;
   schema_version: string;
-  stage: 'pre_skeleton' | 'skeleton_ready';
+  stage: 'pre_skeleton' | 'skeleton_ready' | 'skeleton_review' | 'skeleton_final';
   locale: {
     language: 'ru';
     jurisdiction: 'RU';
@@ -98,7 +99,7 @@ export interface GateBlocker {
 
 export interface LLMStepOutput {
   output_id: string;
-  step: 'INTERPRET' | 'GATE_CHECK' | 'SKELETON_GENERATE';
+  step: 'INTERPRET' | 'GATE_CHECK' | 'SKELETON_GENERATE' | 'SKELETON_REVIEW_PLAN' | 'SKELETON_REVIEW_APPLY';
   patch: Patch;
   issue_updates?: IssueUpsert[];
   next_action: NextAction;
@@ -128,6 +129,7 @@ export type NextAction =
   | { kind: 'ask_user'; ask_user: AskUserAction }
   | { kind: 'proceed_to_gate' }
   | { kind: 'proceed_to_skeleton' }
+  | { kind: 'show_review_questions' }
   | { kind: 'proceed_to_clause_requirements' }
   | { kind: 'halt_error'; error: HaltError };
 
@@ -159,6 +161,93 @@ export interface SafetyFlags {
 }
 
 // ============================================================================
+// Skeleton Review Types
+// ============================================================================
+
+export interface ReviewState {
+  questions?: ReviewQuestion[];
+  answers?: SkeletonReviewAnswer[];
+  iteration?: number;
+  status?: 'collecting' | 'ready_to_apply' | 'applied' | 'frozen';
+  review_id?: string;
+}
+
+export interface SkeletonReviewQuestions {
+  review_id: string;
+  iteration: number;
+  questions: ReviewQuestion[];
+}
+
+export interface ReviewQuestion {
+  question_id: string;
+  title: string;
+  description?: string;
+  priority: number;
+  required?: boolean;
+  ux: UXSpec;
+  binding: Binding;
+  constraints?: Constraints;
+  why_this_matters?: string;
+}
+
+export interface UXSpec {
+  type: 'checkbox_group' | 'radio_group' | 'text_input' | 'number_input' | 'multi_text';
+  options?: Option[];
+  placeholder?: string;
+  fields?: InputField[];
+}
+
+export interface Option {
+  id: string;
+  label: string;
+  value: string | number | boolean;
+  impact: ImpactOp[];
+}
+
+export interface InputField {
+  id: string;
+  label: string;
+  bind_to_domain_path: string;
+  input_type: 'text' | 'number';
+  placeholder?: string;
+  required?: boolean;
+}
+
+export interface Binding {
+  node_ids: string[];
+  bind_to_domain_path?: string;
+}
+
+export interface Constraints {
+  min?: number;
+  max?: number;
+  max_length?: number;
+  pattern?: string;
+}
+
+export interface ImpactOp {
+  op: 'set_node_status' | 'select_variant' | 'set_domain_value' | 'add_issue' | 'resolve_issue';
+  node_id?: string;
+  status?: 'active' | 'omitted';
+  variant_id?: string;
+  path?: string;
+  value?: unknown;
+  issue_id?: string;
+  issue_payload?: Issue;
+}
+
+export interface SkeletonReviewAnswers {
+  review_id: string;
+  answers: SkeletonReviewAnswer[];
+}
+
+export interface SkeletonReviewAnswer {
+  question_id: string;
+  value: string | number | boolean | string[] | object | null;
+  at: string; // ISO date-time
+}
+
+// ============================================================================
 // Contract Skeleton Types
 // ============================================================================
 
@@ -175,6 +264,16 @@ export interface SkeletonNode {
   include_if?: string[];
   requires?: string[];
   notes_for_generator?: string;
+  status?: 'active' | 'omitted';
+  variants?: Variant[];
+  selected_variant_id?: string;
+  children: SkeletonNode[];
+}
+
+export interface Variant {
+  variant_id: string;
+  label: string;
+  description?: string;
   children: SkeletonNode[];
 }
 
@@ -188,6 +287,10 @@ export interface SkeletonMeta {
 export interface DocumentState {
   skeleton?: ContractSkeleton;
   skeleton_meta?: SkeletonMeta;
+  skeleton_final?: ContractSkeleton;
+  freeze?: {
+    structure?: boolean;
+  };
 }
 
 // ============================================================================
@@ -220,7 +323,7 @@ export interface SendMessageResponse {
 }
 
 export interface RunStepRequest {
-  step: 'INTERPRET' | 'GATE_CHECK' | 'SKELETON_GENERATE';
+  step: 'INTERPRET' | 'GATE_CHECK' | 'SKELETON_GENERATE' | 'SKELETON_REVIEW_PLAN' | 'SKELETON_REVIEW_APPLY';
 }
 
 export interface RunStepResponse {
