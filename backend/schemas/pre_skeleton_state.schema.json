@@ -1,0 +1,218 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "schema://legalagi/pre_skeleton_state/1.0.0",
+  "title": "LegalAGI Pre-Skeleton State (Minimal, Universal)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "domain", "issues", "dialogue", "control"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "schema_id",
+        "schema_version",
+        "stage",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "session_id": { "type": "string", "minLength": 8 },
+        "schema_id": { "type": "string" },
+        "schema_version": { "type": "string" },
+        "stage": {
+          "type": "string",
+          "enum": ["pre_skeleton"]
+        },
+        "locale": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["language", "jurisdiction"],
+          "properties": {
+            "language": { "type": "string", "enum": ["ru"] },
+            "jurisdiction": { "type": "string", "enum": ["RU"] }
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": ["collecting", "gating", "ready", "blocked"]
+        },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "state_version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "domain": {
+      "type": "object",
+      "description": "All domain facts, assumptions, entities, and extracted structure. No fixed keys enforced here.",
+      "additionalProperties": true
+    },
+    "issues": {
+      "type": "array",
+      "default": [],
+      "items": { "$ref": "#/$defs/Issue" }
+    },
+    "dialogue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["history", "asked"],
+      "properties": {
+        "history": {
+          "type": "array",
+          "description": "Conversation trace (may be truncated).",
+          "items": { "$ref": "#/$defs/DialogueTurn" }
+        },
+        "asked": {
+          "type": "array",
+          "description": "Previously asked questions to support deduplication.",
+          "items": { "$ref": "#/$defs/AskedQuestion" }
+        }
+      }
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["limits", "checks", "flags"],
+      "properties": {
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_questions_per_run", "max_loops", "max_history_turns"],
+          "properties": {
+            "max_questions_per_run": { "type": "integer", "minimum": 1, "maximum": 50 },
+            "max_loops": { "type": "integer", "minimum": 1, "maximum": 50 },
+            "max_history_turns": { "type": "integer", "minimum": 3, "maximum": 200 }
+          }
+        },
+        "checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["require_user_confirmation_for_assumptions"],
+          "properties": {
+            "require_user_confirmation_for_assumptions": { "type": "boolean" }
+          }
+        },
+        "flags": {
+          "type": "object",
+          "description": "Arbitrary runtime flags. Keep flexible.",
+          "additionalProperties": true
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "description": "Optional. Filled after gate check.",
+      "additionalProperties": false,
+      "required": ["ready_for_skeleton", "summary"],
+      "properties": {
+        "ready_for_skeleton": { "type": "boolean" },
+        "summary": {
+          "type": "string",
+          "description": "1-3 sentences explaining readiness/blockers."
+        },
+        "blockers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/GateBlocker" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "DialogueTurn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "text", "at"],
+      "properties": {
+        "id": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+        "text": { "type": "string", "minLength": 1 },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AskedQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "at"],
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string", "minLength": 1 },
+        "at": { "type": "string", "format": "date-time" },
+        "semantic_fingerprint": {
+          "type": "string",
+          "description": "Optional. For semantic dedup; e.g., short hash."
+        }
+      }
+    },
+    "Issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "severity",
+        "title",
+        "status",
+        "why_it_matters",
+        "resolution_hint"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "key": {
+          "type": "string",
+          "description": "Optional stable key for dedup. Not required."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "high", "med", "low"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "resolved", "dismissed"]
+        },
+        "title": { "type": "string", "minLength": 3 },
+        "why_it_matters": { "type": "string", "minLength": 3 },
+        "missing_or_conflict": {
+          "type": "string",
+          "description": "What exactly is missing/contradictory."
+        },
+        "resolution_hint": {
+          "type": "string",
+          "description": "What to ask/confirm to resolve."
+        },
+        "requires_user_confirmation": {
+          "type": "boolean",
+          "default": false
+        },
+        "evidence": {
+          "type": "array",
+          "description": "Optional pointers to dialogue turns or extracted facts.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "ref"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["turn", "fact_path", "note"] },
+              "ref": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "GateBlocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "message"],
+      "properties": {
+        "severity": { "type": "string", "enum": ["critical", "high", "med", "low"] },
+        "message": { "type": "string" },
+        "linked_issue_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

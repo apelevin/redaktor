@@ -1,96 +1,115 @@
-"use client";
+'use client';
 
-import React from "react";
-import type { ChatMessage, UserQuestion, UserAnswer, ReasoningLevel } from "@/lib/types";
-import ChatInput from "./ChatInput";
-import QuestionForm from "./QuestionForm";
-import ReasoningLevelSelector from "./ReasoningLevelSelector";
+import { useState, useEffect, useRef } from 'react';
+import { PreSkeletonState, NextAction } from '@/lib/types';
+import ChatHistory from './ChatHistory';
+import QuestionForm from './QuestionForm';
+import ChatInput from './ChatInput';
 
 interface ChatPaneProps {
-  messages: ChatMessage[];
-  pendingQuestion?: UserQuestion;
+  state: PreSkeletonState | null;
+  nextAction: NextAction | null;
+  onSendMessage: (message: string) => Promise<void>;
+  onAnswerQuestion: (answer: string) => Promise<void>;
   isLoading: boolean;
-  reasoningLevel: ReasoningLevel | null;
-  onReasoningLevelChange: (level: ReasoningLevel) => void;
-  onSendMessage: (message: string) => void;
-  onAnswerQuestion: (answer: UserAnswer) => void;
 }
 
 export default function ChatPane({
-  messages,
-  pendingQuestion,
-  isLoading,
-  reasoningLevel,
-  onReasoningLevelChange,
+  state,
+  nextAction,
   onSendMessage,
   onAnswerQuestion,
+  isLoading,
 }: ChatPaneProps) {
-  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, pendingQuestion]);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [state?.dialogue.history]);
+
+  const handleSubmit = (answer: string) => {
+    if (nextAction?.kind === 'ask_user') {
+      onAnswerQuestion(answer);
+    } else {
+      onSendMessage(answer);
+    }
+  };
 
   return (
-    <div className="chat-pane">
-      <div className="chat-header">
+    <div style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      height: '100%',
+      backgroundColor: '#f5f5f5'
+    }}>
+      <div style={{ 
+        padding: '15px', 
+        borderBottom: '1px solid #ddd',
+        backgroundColor: '#fff'
+      }}>
         <h2>Чат с агентом</h2>
       </div>
 
-      <div className="chat-messages">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`chat-message ${message.role === "user" ? "user" : "assistant"}`}
-          >
-            <div className="message-content">{message.content}</div>
-            <div className="message-timestamp">
-              {new Date(message.timestamp).toLocaleTimeString()}
-            </div>
-          </div>
-        ))}
-
-        {isLoading && (
-          <div className="chat-message assistant loading">
-            <div className="message-content">
-              <span className="loading-dots">Агент думает</span>
-            </div>
-          </div>
-        )}
-
-        {pendingQuestion && (
-          <div className="chat-message assistant question">
-            <QuestionForm
-              question={pendingQuestion}
-              onSubmit={onAnswerQuestion}
-            />
-          </div>
-        )}
-
+      <div style={{ 
+        flex: 1, 
+        overflow: 'auto', 
+        padding: '15px',
+        backgroundColor: '#fff'
+      }}>
+        <ChatHistory history={state?.dialogue.history || []} />
         <div ref={messagesEndRef} />
       </div>
 
-      {!pendingQuestion && (
-        <div className="chat-input-container">
-          {reasoningLevel === null && messages.length === 0 && !isLoading ? (
-            <ReasoningLevelSelector
-              selectedLevel={reasoningLevel}
-              onSelect={onReasoningLevelChange}
-            />
-          ) : (
-            <ChatInput
-              onSend={onSendMessage}
-              disabled={isLoading || reasoningLevel === null}
-              placeholder={
-                reasoningLevel === null
-                  ? "Сначала выберите уровень проработки документа..."
-                  : "Опишите задачу для агента..."
-              }
-            />
-          )}
-        </div>
-      )}
+      <div style={{ 
+        borderTop: '1px solid #ddd',
+        padding: '15px',
+        backgroundColor: '#fff'
+      }}>
+        {nextAction?.kind === 'ask_user' && (
+          <QuestionForm
+            question={nextAction.ask_user}
+            onSubmit={handleSubmit}
+            isLoading={isLoading}
+          />
+        )}
+        
+        {nextAction?.kind === 'proceed_to_skeleton' && (
+          <div style={{ 
+            padding: '15px', 
+            backgroundColor: '#d4edda', 
+            borderRadius: '8px',
+            color: '#155724'
+          }}>
+            ✅ Готово к генерации skeleton! Все необходимые данные собраны.
+          </div>
+        )}
+        
+        {nextAction?.kind === 'halt_error' && (
+          <div style={{ 
+            padding: '15px', 
+            backgroundColor: '#f8d7da', 
+            borderRadius: '8px',
+            color: '#721c24'
+          }}>
+            ❌ Ошибка: {nextAction.error.message}
+            {nextAction.error.suggested_recovery && (
+              <div style={{ marginTop: '10px' }}>
+                <strong>Рекомендация:</strong> {nextAction.error.suggested_recovery}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {nextAction?.kind !== 'ask_user' && 
+         nextAction?.kind !== 'proceed_to_skeleton' && 
+         nextAction?.kind !== 'halt_error' && (
+          <ChatInput
+            onSend={handleSubmit}
+            isLoading={isLoading}
+            placeholder="Введите сообщение..."
+          />
+        )}
+      </div>
     </div>
   );
 }
-

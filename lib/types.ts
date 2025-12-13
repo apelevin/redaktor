@@ -1,382 +1,196 @@
-// PRO Architecture Types
+/**
+ * TypeScript типы на основе JSON Schema
+ * Соответствуют backend/schemas/pre_skeleton_state.schema.json
+ * и backend/schemas/llm_step_output.schema.json
+ */
 
-// Reasoning level - определяет размер и глубину документа
-export type ReasoningLevel = "basic" | "standard" | "professional";
+// ============================================================================
+// Pre-Skeleton State Types
+// ============================================================================
 
-// Document size policy based on reasoning level
-export interface DocumentSizePolicy {
-  targetPages: { min: number; max: number };
-  maxSections: number;
-  maxClauses: number;
-  verbosity: "low" | "medium" | "high";
-  includeEdgeCases: boolean;
-  includeOptionalProtections: boolean;
+export interface PreSkeletonState {
+  meta: StateMeta;
+  domain: Record<string, unknown>; // Произвольный JSON
+  issues: Issue[];
+  dialogue: Dialogue;
+  control: Control;
+  gate?: Gate;
 }
 
-// Legal domains (модули права/контракта)
-export type LegalDomain =
-  | "confidentiality"
-  | "services"
-  | "ip"
-  | "license"
-  | "sla"
-  | "data_protection_ru"
-  | "security"
-  | "payment"
-  | "liability"
-  | "termination"
-  | "dispute_resolution"
-  | "governing_law"
-  | "employment_ru"
-  | "lease_ru"
-  | "consumer"
-  | "compliance"
-  | "force_majeure"
-  | "other";
-
-// Legal blocks (структурные блоки документа)
-export type LegalBlock =
-  | "preamble_parties"
-  | "definitions"
-  | "subject_scope"
-  | "deliverables_acceptance"
-  | "fees_payment"
-  | "confidentiality"
-  | "ip_rights"
-  | "license_terms"
-  | "service_levels_sla"
-  | "data_protection_ru"
-  | "info_security"
-  | "warranties"
-  | "liability_cap_exclusions"
-  | "indemnities"
-  | "term_renewal"
-  | "termination"
-  | "force_majeure"
-  | "dispute_resolution"
-  | "governing_law"
-  | "notices"
-  | "misc";
-
-// Document Profile (замена DocumentType)
-export interface DocumentProfile {
-  primaryPurpose: string; // "договор на услуги разработки", "соглашение о конфиденциальности" и т.п.
-  legalDomains: LegalDomain[]; // какие домены участвуют
-  mandatoryBlocks: LegalBlock[]; // must-have блоки
-  optionalBlocks: LegalBlock[]; // nice-to-have (в зависимости от reasoningLevel)
-  prohibitedPatterns: string[]; // запрещённые/опасные паттерны для РФ
-  marketArchetype?: string; // ориентир: "Services + IP assignment (RU)"
-  riskPosture: "conservative" | "balanced" | "aggressive";
-}
-
-// Party roles
-export type PartyRole = "customer" | "vendor" | "employer" | "employee" | "landlord" | "tenant" | "contractor" | "other";
-
-// Russian party identifiers
-export interface PartyIdentifiersRU {
-  inn?: string;
-  ogrn?: string;
-  kpp?: string;
-}
-
-// Party representative
-export interface PartyRepresentative {
-  name: string;
-  position: string;
-  basis: string; // "на основании Устава" / "доверенности"
-}
-
-// Contract Party (PRO)
-export interface ContractParty {
-  id: string;
-  role: PartyRole;
-  displayName: string; // "Заказчик", "Исполнитель" — как в тексте
-  legalName?: string; // "ООО «Ромашка»"
-  legalForm?: string; // ООО/АО/ИП
-  identifiers?: PartyIdentifiersRU;
-  address?: string;
-  representative?: PartyRepresentative;
-  bankDetails?: {
-    account?: string;
-    bankName?: string;
-    bik?: string;
-    corrAccount?: string;
+export interface StateMeta {
+  session_id: string;
+  schema_id: string;
+  schema_version: string;
+  stage: 'pre_skeleton';
+  locale: {
+    language: 'ru';
+    jurisdiction: 'RU';
   };
+  status: 'collecting' | 'gating' | 'ready' | 'blocked';
+  created_at: string; // ISO date-time
+  updated_at: string; // ISO date-time
+  state_version?: number;
 }
 
-// Decision keys
-export type DecisionKey =
-  | "reasoning_level" // PRO: уровень рассуждения согласно reasoning.md
-  | "governing_law"
-  | "dispute_resolution"
-  | "liability_cap"
-  | "term"
-  | "auto_renewal"
-  | "pd_regime_ru"
-  | "sla_level"
-  | "payment_terms"
-  | "termination_rights"
-  | "ip_model"
-  | "other";
-
-// Decision record
-export interface DecisionRecord<T> {
-  key: DecisionKey;
-  value: T;
-  source: "user" | "default" | "model_suggestion";
-  timestamp: string;
-}
-
-// Decisions map
-export type DecisionsMap = Record<string, DecisionRecord<any>>;
-
-// Pipeline step IDs
-export type PipelineStepId =
-  | "mission_interpreter"
-  | "profile_builder"
-  | "party_details_collector"
-  | "decision_collector"
-  | "issue_spotter"
-  | "skeleton_generator"
-  | "clause_requirements_generator"
-  | "style_planner"
-  | "clause_generator"
-  | "document_linter";
-
-// Legacy types (for backward compatibility during migration)
-export type DocumentType = string;
-export type Jurisdiction = "RU" | "US" | "EU" | "UK" | "OTHER";
-
-export type StylePresetFamily = "anglo_saxon" | "civil_ru" | "enterprise_legalese" | "plain_language" | "balanced";
-
-export interface LegalDocumentMission {
-  rawUserInput: string;
-  jurisdiction: string[]; // напр. ["RU"]
-  language: "ru" | "en" | "dual";
-  parties: ContractParty[]; // обязательный массив (archv2.md)
-  businessContext: string;
-  userGoals: string[];
-  reasoningLevel: ReasoningLevel;
-  stylePresetId: string;
-  // PRO: профиль документа — вместо жёсткого типа
-  profile?: DocumentProfile;
-}
-
-export interface StylePreset {
-  id: string;
-  family: StylePresetFamily;
-  sentenceLength: "short" | "medium" | "long";
-  formality: "low" | "medium" | "high";
-  definitionPlacement: "beginning" | "inline" | "appendix";
-  crossReferenceFormat: "numeric" | "section_name" | "hybrid";
-}
-
-export interface DocumentSection {
-  id: string;
-  title: string;
-  order: number;
-  clauseRequirementIds: string[]; // обязательное поле согласно archv2.md
-}
-
-export interface ClauseDraft {
-  id: string;
-  requirementId: string; // PRO: ссылка на ClauseRequirement
-  sectionId?: string; // Legacy: для обратной совместимости
-  text: string;
-  reasoningSummary?: string;
-  order: number;
-  source: "model" | "user" | "merged"; // PRO: источник текста
-  lockedByUser?: boolean; // PRO: заблокирован ли пользователем
-  version: number; // PRO: версия пункта
-}
-
-export interface LegalDocument {
-  id: string;
-  mission: LegalDocumentMission;
-  // PRO: обязательные поля согласно archv2.md
-  profile: DocumentProfile;
-  skeleton: DocumentSkeleton;
-  clauseRequirements: ClauseRequirement[];
-  clauseDrafts: ClauseDraft[];
-  finalText: string;
-  stylePreset: StylePreset;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-// Issue types
 export interface Issue {
   id: string;
-  category: string; // "IP", "SLA", "Confidentiality", etc.
-  description: string;
-  severity: "low" | "medium" | "high";
-  required: boolean;
+  key?: string;
+  severity: 'critical' | 'high' | 'med' | 'low';
+  status: 'open' | 'resolved' | 'dismissed';
+  title: string;
+  why_it_matters: string;
+  missing_or_conflict?: string;
+  resolution_hint: string;
+  requires_user_confirmation?: boolean;
+  evidence?: Array<{
+    kind: 'turn' | 'fact_path' | 'note';
+    ref: string;
+  }>;
 }
 
-// Document skeleton
-export interface DocumentSkeleton {
-  sections: DocumentSection[];
+export interface Dialogue {
+  history: DialogueTurn[];
+  asked: AskedQuestion[];
 }
 
-// Clause requirements (PRO)
-export interface ClauseRequirement {
+export interface DialogueTurn {
   id: string;
-  sectionId: string;
-  title: string; // PRO: название требования
-  purpose: string;
-  requiredElements: string[];
-  recommendedElements: string[];
-  relatedIssues: string[]; // Issue IDs (legacy)
-  // PRO: новые связи
-  relatedDomains?: LegalDomain[];
-  relatedBlocks?: LegalBlock[];
-  relatedDecisions?: DecisionKey[];
-  relatedPartyRoles?: PartyRole[];
-  riskNotes?: string;
+  role: 'user' | 'assistant' | 'system';
+  text: string;
+  at: string; // ISO date-time
 }
 
-// Question types (PRO)
-export type QuestionType = "single_choice" | "multi_choice" | "free_text" | "form";
+export interface AskedQuestion {
+  id: string;
+  text: string;
+  at: string; // ISO date-time
+  semantic_fingerprint?: string;
+}
 
-export interface QuestionOption {
+export interface Control {
+  limits: {
+    max_questions_per_run: number;
+    max_loops: number;
+    max_history_turns: number;
+  };
+  checks: {
+    require_user_confirmation_for_assumptions: boolean;
+  };
+  flags: Record<string, unknown>;
+}
+
+export interface Gate {
+  ready_for_skeleton: boolean;
+  summary: string;
+  blockers?: GateBlocker[];
+}
+
+export interface GateBlocker {
+  severity: 'critical' | 'high' | 'med' | 'low';
+  message: string;
+  linked_issue_ids?: string[];
+}
+
+// ============================================================================
+// LLM Step Output Types
+// ============================================================================
+
+export interface LLMStepOutput {
+  output_id: string;
+  step: 'INTERPRET' | 'GATE_CHECK';
+  patch: Patch;
+  issue_updates?: IssueUpsert[];
+  next_action: NextAction;
+  rationale: string;
+  safety?: SafetyFlags;
+  observations?: string[];
+}
+
+export interface Patch {
+  format: 'json_patch' | 'merge_patch';
+  ops: JsonPatchOp[] | Record<string, unknown>;
+}
+
+export interface JsonPatchOp {
+  op: 'add' | 'remove' | 'replace' | 'move' | 'copy' | 'test';
+  path: string;
+  from?: string;
+  value?: unknown;
+}
+
+export interface IssueUpsert {
+  op: 'upsert' | 'resolve' | 'dismiss';
+  issue: Issue;
+}
+
+export type NextAction =
+  | { kind: 'ask_user'; ask_user: AskUserAction }
+  | { kind: 'proceed_to_gate' }
+  | { kind: 'proceed_to_skeleton' }
+  | { kind: 'halt_error'; error: HaltError };
+
+export interface AskUserAction {
+  question_id?: string;
+  question_text: string;
+  answer_format: 'free_text' | 'choices';
+  choices?: Choice[];
+  why_this_question?: string;
+  links_to_issue_ids?: string[];
+}
+
+export interface Choice {
   id: string;
   label: string;
-  description?: string;
-  legalEffect?: string; // PRO: юридический эффект выбора
-  riskLevel?: "low" | "medium" | "high";
-  isRecommended?: boolean;
-  isMarketStandard?: boolean; // PRO: соответствует ли рыночному стандарту
-  requiresInput?: boolean; // If true, show text input field for this option
-  inputPlaceholder?: string; // Placeholder text for input field
+  value: string | number | boolean;
 }
 
-export interface UserQuestion {
-  id: string;
-  type: QuestionType;
-  title: string;
-  text: string; // зачем вопрос и что от ответа зависит
-  options?: QuestionOption[];
-  relatesToSectionId?: string; // к какой секции документа относится
-  relatesToClauseId?: string; // к какому пункту относится
-  decisionKey?: DecisionKey; // PRO: если вопрос пишет в decisions
-  required: boolean; // PRO: обязателен ли вопрос
-  legalImpact: string; // кратко: юридические последствия выбора
+export interface HaltError {
+  category: 'schema_validation' | 'insufficient_context' | 'policy_violation' | 'other';
+  message: string;
+  suggested_recovery?: string;
 }
 
-export interface UserAnswer {
-  questionId: string;
-  selectedOptionIds?: string[];
-  freeText?: string;
-  formData?: Record<string, any>; // PRO: данные формы для типа "form"
+export interface SafetyFlags {
+  has_unconfirmed_assumptions?: boolean;
+  detected_conflict?: boolean;
+  repeat_question_risk?: boolean;
 }
 
-// Agent state (PRO) - согласно archv2.md
-export interface AgentState {
-  conversationId: string;
-  documentId: string;
-  // PRO: план выполнения и курсор
-  plan: PipelineStepId[];
-  stepCursor: number;
-  // Legacy: для обратной совместимости
-  step?: string;
-  
-  // PRO: обязательные поля на верхнем уровне (archv2.md)
-  sizePolicy: DocumentSizePolicy;
-  parties: ContractParty[];
-  decisions: DecisionsMap;
-  
-  // PRO: опциональные поля на верхнем уровне
-  mission?: LegalDocumentMission;
-  profile?: DocumentProfile;
-  skeleton?: DocumentSkeleton;
-  clauseRequirements?: ClauseRequirement[];
-  clauseDrafts?: ClauseDraft[];
-  
-  // PRO: подсветка секций/пунктов
-  highlightedSectionId?: string;
-  highlightedClauseId?: string;
-  
-  // Внутренние данные (usage stats, промежуточные структуры)
-  internalData: {
-    issues?: Issue[];
-    stylePreset?: StylePreset;
-    // Usage stats
-    totalCost?: number;
-    totalTokens?: number;
-    promptTokens?: number;
-    completionTokens?: number;
-    lastModel?: string;
-    lastAnswer?: UserAnswer;
-    [key: string]: any; // для любых промежуточных структур
-  };
+// ============================================================================
+// API Request/Response Types
+// ============================================================================
+
+export interface CreateSessionRequest {
+  initial_message?: string;
 }
 
-// Chat message
-export interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
+export interface CreateSessionResponse {
+  session_id: string;
+  state: PreSkeletonState;
+  next_action: NextAction;
 }
 
-// Agent step result (PRO)
-export type AgentStepResult =
-  | {
-      type: "continue"; // агент сделал шаг, можно сразу продолжать
-      state: AgentState;
-      documentPatch?: Partial<LegalDocument>;
-      chatMessages: ChatMessage[];
-      highlightedSectionId?: string; // PRO: подсветка секции
-      highlightedClauseId?: string; // PRO: подсветка пункта
-    }
-  | {
-      type: "need_user_input"; // агент остановился и ждёт ответ
-      state: AgentState;
-      documentPatch?: Partial<LegalDocument>;
-      question: UserQuestion;
-      chatMessages: ChatMessage[]; // обычно сообщение, объясняющее вопрос
-      highlightedSectionId?: string; // PRO: подсветка секции
-      highlightedClauseId?: string; // PRO: подсветка пункта
-    }
-  | {
-      type: "finished"; // документ готов
-      state: AgentState;
-      document: LegalDocument;
-      chatMessages: ChatMessage[];
-    };
-
-// UI state
-export interface UIState {
-  document: LegalDocument | null;
-  agentState: AgentState | null;
-  pendingQuestion?: UserQuestion;
-  chatMessages: ChatMessage[];
-  isLoading: boolean;
-  error?: string;
-  totalCost?: number; // Total cost in USD
-  totalTokens?: number; // Total tokens used
-  promptTokens?: number; // Total prompt tokens used
-  completionTokens?: number; // Total completion tokens used
-  lastModel?: string; // Last model used
+export interface GetSessionResponse {
+  state: PreSkeletonState;
+  next_action: NextAction;
 }
 
-// API request/response types (PRO)
-export interface AgentStepRequest {
-  conversationId: string; // обязательное поле согласно archv2.md
-  userMessage?: string;
-  agentState: AgentState | null;
-  userAnswer?: UserAnswer;
-  documentChanges?: Partial<LegalDocument>;
-  documentPatchFromUser?: Partial<LegalDocument>; // PRO: правки пользователя
-  reasoningLevel?: ReasoningLevel; // для первого запроса согласно reasoning.md
+export interface SendMessageRequest {
+  message: string;
+  answer_to_question_id?: string;
 }
 
-export interface AgentStepResponse {
-  result: AgentStepResult;
-  totalCost?: number; // Total cost in USD
-  totalTokens?: number; // Total tokens used
-  promptTokens?: number; // Total prompt tokens used
-  completionTokens?: number; // Total completion tokens used
-  lastModel?: string; // Last model used
+export interface SendMessageResponse {
+  state: PreSkeletonState;
+  next_action: NextAction;
 }
 
+export interface RunStepRequest {
+  step: 'INTERPRET' | 'GATE_CHECK';
+}
+
+export interface RunStepResponse {
+  llm_output: LLMStepOutput;
+  state: PreSkeletonState;
+  next_action: NextAction;
+}

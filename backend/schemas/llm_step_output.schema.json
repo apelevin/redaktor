@@ -1,0 +1,181 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "schema://legalagi/llm_step_output/1.0.0",
+  "title": "LegalAGI LLM Step Output (Minimal, Universal)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["output_id", "step", "patch", "next_action", "rationale"],
+  "properties": {
+    "output_id": { "type": "string" },
+    "step": {
+      "type": "string",
+      "enum": ["INTERPRET", "GATE_CHECK"]
+    },
+    "patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "ops"],
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": ["json_patch", "merge_patch"]
+        },
+        "ops": {
+          "description": "If json_patch: RFC 6902 array of operations. If merge_patch: a single object.",
+          "oneOf": [
+            {
+              "type": "array",
+              "items": { "$ref": "#/$defs/JsonPatchOp" }
+            },
+            {
+              "type": "object",
+              "additionalProperties": true
+            }
+          ]
+        }
+      }
+    },
+    "issue_updates": {
+      "type": "array",
+      "description": "Optional. Add/update issues. Keep it separate from patch for clarity.",
+      "items": { "$ref": "#/$defs/IssueUpsert" }
+    },
+    "next_action": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["ask_user", "proceed_to_gate", "proceed_to_skeleton", "halt_error"]
+        },
+        "ask_user": { "$ref": "#/$defs/AskUserAction" },
+        "error": { "$ref": "#/$defs/HaltError" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "ask_user" } } },
+          "then": { "required": ["ask_user"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "halt_error" } } },
+          "then": { "required": ["error"] }
+        }
+      ],
+      "additionalProperties": true
+    },
+    "rationale": {
+      "type": "string",
+      "description": "Short explanation for debugging and trace (1-6 sentences).",
+      "minLength": 3
+    },
+    "safety": {
+      "type": "object",
+      "description": "Optional flags that affect orchestration decisions.",
+      "additionalProperties": false,
+      "properties": {
+        "has_unconfirmed_assumptions": { "type": "boolean" },
+        "detected_conflict": { "type": "boolean" },
+        "repeat_question_risk": { "type": "boolean" }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "description": "Optional short notes about extracted facts/ambiguities.",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "JsonPatchOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "path"],
+      "properties": {
+        "op": { "type": "string", "enum": ["add", "remove", "replace", "move", "copy", "test"] },
+        "path": { "type": "string", "minLength": 1 },
+        "from": { "type": "string" },
+        "value": {}
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "op": { "enum": ["add", "replace", "test"] } } },
+          "then": { "required": ["value"] }
+        },
+        {
+          "if": { "properties": { "op": { "enum": ["move", "copy"] } } },
+          "then": { "required": ["from"] }
+        }
+      ]
+    },
+    "IssueUpsert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["op", "issue"],
+      "properties": {
+        "op": { "type": "string", "enum": ["upsert", "resolve", "dismiss"] },
+        "issue": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Must conform to the Issue definition used by the state schema. Kept loose here for modularity."
+        }
+      }
+    },
+    "AskUserAction": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["question_text", "answer_format"],
+      "properties": {
+        "question_id": {
+          "type": "string",
+          "description": "Optional stable id for dedup (LLM may omit)."
+        },
+        "question_text": { "type": "string", "minLength": 5 },
+        "answer_format": {
+          "type": "string",
+          "enum": ["free_text", "choices"]
+        },
+        "choices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Choice" },
+          "minItems": 2
+        },
+        "why_this_question": {
+          "type": "string",
+          "description": "1-2 sentences linking to the issue it resolves."
+        },
+        "links_to_issue_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "answer_format": { "const": "choices" } } },
+          "then": { "required": ["choices"] }
+        }
+      ]
+    },
+    "Choice": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "label", "value"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "value": { "type": ["string", "number", "boolean"] }
+      }
+    },
+    "HaltError": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["message", "category"],
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["schema_validation", "insufficient_context", "policy_violation", "other"]
+        },
+        "message": { "type": "string", "minLength": 5 },
+        "suggested_recovery": { "type": "string" }
+      }
+    }
+  }
+}

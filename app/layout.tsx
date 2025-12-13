@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "LegalAGI - Legal Document Workspace",
-  description: "AI-powered legal document workspace with Human-in-the-Loop",
+  title: 'LegalAGI',
+  description: 'AI-powered legal document generator',
 };
 
 export default function RootLayout({
@@ -17,4 +17,3 @@ export default function RootLayout({
     </html>
   );
 }
-
