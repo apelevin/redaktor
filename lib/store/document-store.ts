@@ -1,0 +1,310 @@
+import { create } from 'zustand';
+import type { Question, QuestionAnswer } from '@/types/question';
+import type { CompletionState, NextStep } from '@/types/completion';
+import type { TokenUsage } from '@/lib/utils/cost-calculator';
+import { calculateCost } from '@/lib/utils/cost-calculator';
+import type { Section } from '@/types/document';
+import type { DocumentMode } from '@/types/document-mode';
+import type { TermsDictionary } from '@/types/terms';
+import type { Instruction, InstructionMatch } from '@/types/instruction';
+
+export interface CostRecord {
+  id: string;
+  timestamp: Date;
+  model: string;
+  usage: TokenUsage;
+  cost: number;
+  operation: string; // 'question_generation' | 'completion_message' | 'skeleton' | 'clause' | 'context_completion'
+}
+
+export type PipelineStep = 'step1' | 'step2' | 'step3' | 'step4';
+
+interface DocumentStore {
+  documentType: string | null;
+  context: Record<string, any>;
+  questions: Question[];
+  answers: QuestionAnswer[];
+  currentQuestionId: string | null;
+  completionState: CompletionState | null;
+  nextStep: NextStep | null;
+  currentStep: PipelineStep;
+  generatedContext: string | null; // Полное описание договора, сгенерированное на шаге 2
+  skeleton: Section[] | null; // Скелет документа, сгенерированный на шаге 3
+  selectedSkeletonItems: Set<string>; // Выбранные пункты скелета (ключ: sectionId-itemIndex)
+  skeletonConfirmed: boolean; // Флаг подтверждения структуры
+  currentSkeletonItem: { sectionId: string; itemIndex: number } | null; // Текущий пункт, по которому задается вопрос
+  skeletonItemAnswers: Record<string, any>; // Ответы по пунктам скелета (ключ: sectionId-itemIndex)
+  generatedDocument: string | null; // Полный сгенерированный текст документа
+  documentClauses: Record<string, string>; // Сгенерированные тексты по пунктам (ключ: sectionId-itemIndex)
+  costRecords: CostRecord[];
+  documentMode: DocumentMode; // Режим генерации документа
+  outputTextMode: DocumentMode | null; // Режим генерации текста (null = использовать documentMode)
+  terms: TermsDictionary | null; // Словарь терминов договора
+  instruction: Instruction | null; // Сгенерированная инструкция
+  jurisdiction: string | null; // Юрисдикция документа (по умолчанию "RU")
+  instructionPineconeId: string | null; // ID инструкции в Pinecone после сохранения
+  instructionMatch: InstructionMatch | null; // Найденная инструкция из Pinecone
+
+  // Actions
+  setDocumentType: (type: string | null) => void;
+  addAnswer: (answer: QuestionAnswer) => void;
+  setCurrentQuestion: (questionId: string | null) => void;
+  addQuestion: (question: Question) => void;
+  updateContext: (updates: Record<string, any>) => void;
+  setCompletionState: (state: CompletionState | null) => void;
+  setNextStep: (step: NextStep | null) => void;
+  setCurrentStep: (step: PipelineStep) => void;
+  setGeneratedContext: (context: string | null) => void;
+  setSkeleton: (skeleton: Section[]) => void;
+  toggleSkeletonItem: (sectionId: string, itemIndex: number) => void;
+  selectAllSkeletonItems: (sectionId?: string) => void;
+  deselectAllSkeletonItems: (sectionId?: string) => void;
+  setSelectedSkeletonItems: (items: Set<string>) => void;
+  confirmSkeleton: () => void;
+  setCurrentSkeletonItem: (item: { sectionId: string; itemIndex: number } | null) => void;
+  addSkeletonItemAnswer: (sectionId: string, itemIndex: number, answer: any) => void;
+  setGeneratedDocument: (text: string | null) => void;
+  addDocumentClause: (sectionId: string, itemIndex: number, text: string) => void;
+  addCostRecord: (model: string, usage: TokenUsage, operation: string) => void;
+  setDocumentMode: (mode: DocumentMode) => void;
+  setOutputTextMode: (mode: DocumentMode | null) => void;
+  setTerms: (terms: TermsDictionary | null) => void;
+  setInstruction: (instruction: Instruction | null) => void;
+  setJurisdiction: (jurisdiction: string | null) => void;
+  setInstructionPineconeId: (id: string | null) => void;
+  setInstructionMatch: (match: InstructionMatch | null) => void;
+  reset: () => void;
+  
+}
+
+export const useDocumentStore = create<DocumentStore>((set, get) => ({
+  documentType: null,
+  context: {},
+  questions: [],
+  answers: [],
+  currentQuestionId: null,
+  completionState: null,
+  nextStep: null,
+  currentStep: 'step1',
+  generatedContext: null,
+  skeleton: null,
+  selectedSkeletonItems: new Set<string>(),
+  skeletonConfirmed: false,
+  currentSkeletonItem: null,
+  skeletonItemAnswers: {},
+  generatedDocument: null,
+  documentClauses: {},
+  costRecords: [],
+  documentMode: 'short',
+  outputTextMode: null,
+  terms: null,
+  instruction: null,
+  jurisdiction: 'RU',
+  instructionPineconeId: null,
+  instructionMatch: null,
+
+  setDocumentType: (type) => set({ 
+    documentType: type, 
+    context: {}, 
+    answers: [], 
+    questions: [], 
+    currentQuestionId: null,
+    completionState: null,
+    nextStep: null,
+    currentStep: 'step1',
+    generatedContext: null,
+    skeleton: null,
+    selectedSkeletonItems: new Set<string>(),
+    skeletonConfirmed: false,
+    currentSkeletonItem: null,
+    skeletonItemAnswers: {},
+    generatedDocument: null,
+    documentClauses: {},
+    costRecords: [], // Сбрасываем затраты при новом документе
+    documentMode: 'short',
+    outputTextMode: null,
+    terms: null,
+    instruction: null,
+    jurisdiction: 'RU',
+  }),
+
+  addAnswer: (answer) => set((state) => ({
+    answers: [...state.answers, answer],
+  })),
+
+  setCurrentQuestion: (questionId) => set({ currentQuestionId: questionId }),
+
+  addQuestion: (question) => set((state) => ({
+    questions: [...state.questions, question],
+  })),
+
+  updateContext: (updates) => set((state) => ({
+    context: { ...state.context, ...updates },
+  })),
+
+  setCompletionState: (state) => set({ completionState: state }),
+
+  setNextStep: (step) => set({ nextStep: step }),
+
+  setCurrentStep: (step) => set({ currentStep: step }),
+
+  setGeneratedContext: (context) => set({ generatedContext: context }),
+
+  setSkeleton: (skeleton) => {
+    set({ skeleton, selectedSkeletonItems: new Set<string>() });
+  },
+
+  toggleSkeletonItem: (sectionId, itemIndex) => {
+    const key = `${sectionId}-${itemIndex}`;
+    set((state) => {
+      const newSet = new Set(state.selectedSkeletonItems);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return { selectedSkeletonItems: newSet };
+    });
+  },
+
+  selectAllSkeletonItems: (sectionId) => {
+    set((state) => {
+      if (!state.skeleton) return state;
+      const newSet = new Set(state.selectedSkeletonItems);
+      
+      if (sectionId) {
+        // Выбрать все в конкретной секции
+        const section = state.skeleton.find((s) => s.id === sectionId);
+        if (section) {
+          section.items.forEach((_, index) => {
+            newSet.add(`${sectionId}-${index}`);
+          });
+        }
+      } else {
+        // Выбрать все во всех секциях
+        state.skeleton.forEach((section) => {
+          section.items.forEach((_, index) => {
+            newSet.add(`${section.id}-${index}`);
+          });
+        });
+      }
+      return { selectedSkeletonItems: newSet };
+    });
+  },
+
+  deselectAllSkeletonItems: (sectionId) => {
+    set((state) => {
+      if (!state.skeleton) return state;
+      const newSet = new Set(state.selectedSkeletonItems);
+      
+      if (sectionId) {
+        // Снять выбор со всех в конкретной секции
+        const section = state.skeleton.find((s) => s.id === sectionId);
+        if (section) {
+          section.items.forEach((_, index) => {
+            newSet.delete(`${sectionId}-${index}`);
+          });
+        }
+      } else {
+        // Снять выбор со всех секций
+        newSet.clear();
+      }
+      return { selectedSkeletonItems: newSet };
+    });
+  },
+
+  setSelectedSkeletonItems: (items) => set({ selectedSkeletonItems: items }),
+
+  confirmSkeleton: () => set({ skeletonConfirmed: true }),
+
+  setCurrentSkeletonItem: (item) => set({ currentSkeletonItem: item }),
+
+  addSkeletonItemAnswer: (sectionId, itemIndex, answer) => {
+    const key = `${sectionId}-${itemIndex}`;
+    set((state) => ({
+      skeletonItemAnswers: { ...state.skeletonItemAnswers, [key]: answer },
+    }));
+  },
+
+  setGeneratedDocument: (text) => set({ generatedDocument: text }),
+
+  addDocumentClause: (sectionId, itemIndex, text) => {
+    const key = `${sectionId}-${itemIndex}`;
+    set((state) => ({
+      documentClauses: { ...state.documentClauses, [key]: text },
+    }));
+  },
+
+  addCostRecord: (model, usage, operation) => {
+    const cost = calculateCost(model, usage).totalCost;
+    const record: CostRecord = {
+      id: `cost-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date(),
+      model,
+      usage,
+      cost,
+      operation,
+    };
+    set((state) => ({
+      costRecords: [...state.costRecords, record],
+    }));
+  },
+
+  setDocumentMode: (mode) => set({ documentMode: mode }),
+
+  setOutputTextMode: (mode) => set({ outputTextMode: mode }),
+
+  setTerms: (terms) => set({ terms }),
+
+  setInstruction: (instruction) => set({ 
+    instruction,
+    // Сбрасываем ID сохранения при генерации новой инструкции
+    instructionPineconeId: instruction ? null : null,
+  }),
+
+  setJurisdiction: (jurisdiction) => set({ jurisdiction: jurisdiction || 'RU' }),
+
+  setInstructionPineconeId: (id) => set({ instructionPineconeId: id }),
+
+  setInstructionMatch: (match) => set({ instructionMatch: match }),
+
+  reset: () => set({
+    documentType: null,
+    context: {},
+    questions: [],
+    answers: [],
+    currentQuestionId: null,
+    completionState: null,
+    nextStep: null,
+    currentStep: 'step1',
+    generatedContext: null,
+    skeleton: null,
+    selectedSkeletonItems: new Set<string>(),
+    skeletonConfirmed: false,
+    currentSkeletonItem: null,
+    skeletonItemAnswers: {},
+    generatedDocument: null,
+    documentClauses: {},
+    costRecords: [],
+    documentMode: 'short',
+    outputTextMode: null,
+    terms: null,
+    instruction: null,
+    jurisdiction: 'RU',
+    instructionPineconeId: null,
+    instructionMatch: null,
+  }),
+}));
+
+// Селектор для вычисления totalCost
+export const useTotalCost = () => {
+  const costRecords = useDocumentStore((state) => state.costRecords);
+  return costRecords.reduce((sum, record) => sum + record.cost, 0);
+};
+
+// Селектор для вычисления canGenerateContract
+export const useCanGenerateContract = () => {
+  const completionState = useDocumentStore((state) => state.completionState);
+  return completionState?.mustCompleted ?? false;
+};
+
