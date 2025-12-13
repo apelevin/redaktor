@@ -1,6 +1,6 @@
 import { PreSkeletonState, NextAction, LLMStepOutput } from '@/lib/types';
 import { getSessionStorage } from '@/backend/storage/session-storage';
-import { runInterpretStep, runGateCheckStep } from './llm-step-runner';
+import { runInterpretStep, runGateCheckStep, runSkeletonGenerateStep } from './llm-step-runner';
 import { applyLLMOutput } from './patch-applier';
 import { appendDialogueTurn, addAskedQuestion } from '@/lib/json-patch';
 import {
@@ -10,6 +10,8 @@ import {
   detectInventedValues,
 } from './policy-guard';
 import { checkGate } from './gatekeeper';
+import { lintSkeleton, countNodes } from './skeleton-linter';
+import { validate } from '@/backend/schemas/schema-registry';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -288,10 +290,12 @@ export function getSessionState(sessionId: string): {
     return null;
   }
   
-  // Определяем next_action на основе статуса
+  // Определяем next_action на основе статуса и stage
   let nextAction: NextAction;
   
-  if (state.meta.status === 'ready') {
+  if (state.meta.stage === 'skeleton_ready') {
+    nextAction = { kind: 'proceed_to_clause_requirements' };
+  } else if (state.meta.status === 'ready' && state.meta.stage === 'pre_skeleton') {
     nextAction = { kind: 'proceed_to_skeleton' };
   } else if (state.meta.status === 'blocked') {
     nextAction = {
@@ -323,4 +327,167 @@ export function getSessionState(sessionId: string): {
   }
   
   return { state, nextAction };
+}
+
+/**
+ * Обрабатывает генерацию skeleton
+ */
+export async function processSkeletonGeneration(
+  sessionId: string
+): Promise<{ state: PreSkeletonState; nextAction: NextAction }> {
+  const storage = getSessionStorage();
+  const state = storage.getState(sessionId);
+  
+  if (!state) {
+    throw new Error(`Session not found: ${sessionId}`);
+  }
+  
+  // Проверяем preconditions
+  if (state.meta.stage !== 'pre_skeleton') {
+    throw new Error(`Invalid stage for skeleton generation: ${state.meta.stage}. Expected: pre_skeleton`);
+  }
+  
+  if (!state.gate || !state.gate.ready_for_skeleton) {
+    throw new Error('Gate check must pass before skeleton generation');
+  }
+  
+  // Запускаем SKELETON_GENERATE шаг
+  let llmOutput;
+  try {
+    llmOutput = await runSkeletonGenerateStep(state);
+  } catch (error) {
+    return {
+      state,
+      nextAction: {
+        kind: 'halt_error',
+        error: {
+          category: 'other',
+          message: `Failed to run SKELETON_GENERATE step: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
+      },
+    };
+  }
+  
+  // Применяем patch
+  let updatedState = applyLLMOutput(state, llmOutput);
+  
+  // Проверяем, что skeleton был добавлен
+  if (!updatedState.document?.skeleton) {
+    return {
+      state: updatedState,
+      nextAction: {
+        kind: 'halt_error',
+        error: {
+          category: 'other',
+          message: 'Skeleton was not generated in LLM output',
+        },
+      },
+    };
+  }
+  
+  // Валидируем skeleton по схеме
+  const skeletonValidation = validate(
+    updatedState.document.skeleton,
+    'schema://legalagi/contract_skeleton/1.0.0'
+  );
+  
+  if (!skeletonValidation.valid) {
+    // Добавляем issue о проблеме валидации
+    const validationIssue: Issue = {
+      id: `skeleton_validation_error_${Date.now()}`,
+      severity: 'high',
+      title: 'Ошибка валидации skeleton',
+      why_it_matters: 'Skeleton не соответствует схеме и не может быть использован',
+      resolution_hint: 'Требуется перегенерация skeleton',
+      status: 'open',
+    };
+    
+    updatedState = {
+      ...updatedState,
+      issues: [...updatedState.issues, validationIssue],
+      meta: {
+        ...updatedState.meta,
+        status: 'blocked',
+      },
+    };
+    
+    storage.saveState(sessionId, updatedState);
+    
+    return {
+      state: updatedState,
+      nextAction: {
+        kind: 'ask_user',
+        ask_user: {
+          question_text: 'Ошибка при генерации skeleton. Требуется перегенерация.',
+          answer_format: 'free_text',
+        },
+      },
+    };
+  }
+  
+  // Запускаем линтер skeleton
+  const lintResult = lintSkeleton(updatedState.document.skeleton);
+  
+  // Подсчитываем количество узлов
+  const nodeCount = countNodes(updatedState.document.skeleton);
+  
+  // Обновляем skeleton_meta
+  updatedState = {
+    ...updatedState,
+    document: {
+      ...updatedState.document,
+      skeleton_meta: {
+        schema_version: '1.0.0',
+        generated_at: new Date().toISOString(),
+        generated_by_step: 'SKELETON_GENERATE',
+        node_count: nodeCount,
+      },
+    },
+  };
+  
+  // Если линтер нашел проблемы, добавляем их в issues
+  if (!lintResult.valid && lintResult.issues.length > 0) {
+    updatedState = {
+      ...updatedState,
+      issues: [...updatedState.issues, ...lintResult.issues],
+      meta: {
+        ...updatedState.meta,
+        status: 'blocked',
+      },
+    };
+    
+    storage.saveState(sessionId, updatedState);
+    
+    return {
+      state: updatedState,
+      nextAction: {
+        kind: 'ask_user',
+        ask_user: {
+          question_text: `Skeleton сгенерирован, но найдены проблемы (${lintResult.issues.length}). Проверьте issues.`,
+          answer_format: 'free_text',
+        },
+      },
+    };
+  }
+  
+  // Всё ок - переводим stage в skeleton_ready
+  updatedState = {
+    ...updatedState,
+    meta: {
+      ...updatedState.meta,
+      stage: 'skeleton_ready',
+      status: 'ready',
+      updated_at: new Date().toISOString(),
+      state_version: (updatedState.meta.state_version || 0) + 1,
+    },
+  };
+  
+  storage.saveState(sessionId, updatedState);
+  
+  return {
+    state: updatedState,
+    nextAction: {
+      kind: 'proceed_to_clause_requirements',
+    },
+  };
 }

@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "schema://legalagi/contract_skeleton/1.0.0",
+  "title": "LegalAGI Contract Skeleton Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["root"],
+  "properties": {
+    "root": {
+      "$ref": "#/$defs/SkeletonNode"
+    }
+  },
+  "$defs": {
+    "SkeletonNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_id", "kind", "title", "tags", "children"],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Уникальный стабильный идентификатор узла"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["document", "section", "clause", "appendix"],
+          "description": "Тип узла в иерархии договора"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Название узла на русском языке"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "description": "Семантические теги для классификации узла"
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "description": "1-2 предложения, объясняющие назначение узла"
+        },
+        "include_if": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "JSON Pointer путь в state.domain, условие включения узла"
+          },
+          "description": "Условия включения узла в финальный документ"
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "JSON Pointer путь в state.domain, необходимый для генерации текста"
+          },
+          "description": "Пути в state.domain, необходимые для генерации текста этого узла"
+        },
+        "notes_for_generator": {
+          "type": "string",
+          "description": "Опциональные заметки для генератора текста"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SkeletonNode"
+          },
+          "description": "Вложенные узлы"
+        }
+      }
+    }
+  }
+}

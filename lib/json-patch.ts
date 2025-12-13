@@ -22,10 +22,17 @@ export function applyPatch(state: PreSkeletonState, patch: Patch): PreSkeletonSt
       throw new Error('Cannot modify protected paths (dialogue.history) via patch. Use append operations only.');
     }
     
-    // Применяем patch
-    // Клонируем state перед применением, чтобы не изменять оригинал
+    // Предварительно создаем недостающие пути для операций 'add'
+    // Это необходимо, так как fast-json-patch не создает промежуточные объекты автоматически
     const stateClone = JSON.parse(JSON.stringify(state)) as PreSkeletonState;
-    // mutateDocument = true означает, что мы изменяем клон
+    for (const op of ops) {
+      if (op.op === 'add' && op.path) {
+        ensurePathExists(stateClone, op.path);
+      }
+    }
+    
+    // Применяем patch
+    // mutateDocument = false означает, что мы не изменяем оригинал
     const result = applyJsonPatch(stateClone, ops, false, false);
     
     // Проверяем на ошибки
@@ -93,6 +100,28 @@ export function applyPatch(state: PreSkeletonState, patch: Patch): PreSkeletonSt
     merged.meta.state_version = (merged.meta.state_version || 0) + 1;
     
     return merged;
+  }
+}
+
+/**
+ * Убеждается, что путь существует в объекте, создавая промежуточные объекты при необходимости
+ */
+function ensurePathExists(obj: any, path: string): void {
+  if (!path || path === '/') return;
+  
+  // Убираем ведущий '/'
+  const cleanPath = path.startsWith('/') ? path.slice(1) : path;
+  const parts = cleanPath.split('/');
+  
+  // Убираем последний элемент (это то, что мы хотим добавить)
+  const pathToCreate = parts.slice(0, -1);
+  
+  let current = obj;
+  for (const part of pathToCreate) {
+    if (!current[part] || typeof current[part] !== 'object' || Array.isArray(current[part])) {
+      current[part] = {};
+    }
+    current = current[part];
   }
 }
 

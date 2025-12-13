@@ -4,6 +4,8 @@ import addFormats from 'ajv-formats';
 import preSkeletonStateSchema from './pre_skeleton_state.schema.json';
 // @ts-ignore - JSON imports
 import llmStepOutputSchema from './llm_step_output.schema.json';
+// @ts-ignore - JSON imports
+import contractSkeletonSchema from './contract_skeleton.schema.json';
 
 export interface SchemaRecord {
   schema_id: string;
@@ -32,6 +34,12 @@ const SCHEMA_REGISTRY: SchemaRecord[] = [
     schema_version: '1.0.0',
     compatibility: 'backward_compatible',
     schema: llmStepOutputSchema,
+  },
+  {
+    schema_id: 'schema://legalagi/contract_skeleton/1.0.0',
+    schema_version: '1.0.0',
+    compatibility: 'backward_compatible',
+    schema: contractSkeletonSchema,
   },
 ];
 

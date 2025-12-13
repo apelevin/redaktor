@@ -10,6 +10,7 @@ export default function Home() {
   const [state, setState] = useState<PreSkeletonState | null>(null);
   const [nextAction, setNextAction] = useState<NextAction | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGeneratingSkeleton, setIsGeneratingSkeleton] = useState(false);
 
   // Создаем сессию при загрузке
   useEffect(() => {
@@ -68,11 +69,39 @@ export default function Home() {
     await handleSendMessage(answer);
   };
 
+  const handleGenerateSkeleton = async () => {
+    if (!sessionId || isGeneratingSkeleton) return;
+
+    setIsGeneratingSkeleton(true);
+    try {
+      const response = await fetch(`/api/session/${sessionId}/skeleton`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate skeleton');
+      }
+
+      const data = await response.json();
+      setState(data.state);
+      setNextAction(data.next_action);
+    } catch (error) {
+      console.error('Error generating skeleton:', error);
+    } finally {
+      setIsGeneratingSkeleton(false);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       {/* Левая панель - 2/3 экрана */}
       <div style={{ width: '66.66%', overflow: 'auto', borderRight: '1px solid #ddd' }}>
-        <ResultPane state={state} />
+        <ResultPane 
+          state={state} 
+          onGenerateSkeleton={handleGenerateSkeleton}
+          isGeneratingSkeleton={isGeneratingSkeleton}
+        />
       </div>
 
       {/* Правая панель - 1/3 экрана */}

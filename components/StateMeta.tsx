@@ -1,13 +1,14 @@
 'use client';
 
-import type { StateMeta, Gate } from '@/lib/types';
+import type { StateMeta, Gate, SkeletonMeta } from '@/lib/types';
 
 interface StateMetaProps {
   meta: StateMeta;
   gate?: Gate;
+  skeletonMeta?: SkeletonMeta;
 }
 
-export default function StateMeta({ meta, gate }: StateMetaProps) {
+export default function StateMeta({ meta, gate, skeletonMeta }: StateMetaProps) {
   const statusColors: Record<string, string> = {
     collecting: '#ffa500',
     gating: '#4169e1',
@@ -69,6 +70,20 @@ export default function StateMeta({ meta, gate }: StateMetaProps) {
               </ul>
             </div>
           )}
+        </div>
+      )}
+      
+      {skeletonMeta && (
+        <div style={{ marginTop: '15px', padding: '10px', backgroundColor: '#f0fdf4', borderRadius: '4px' }}>
+          <div>
+            <strong>Skeleton Status:</strong>{' '}
+            <span style={{ color: '#16a34a', fontWeight: 'bold' }}>
+              Ready
+            </span>
+          </div>
+          <div style={{ marginTop: '5px', fontSize: '13px', color: '#666' }}>
+            Узлов: {skeletonMeta.node_count} | Сгенерирован: {new Date(skeletonMeta.generated_at).toLocaleString('ru-RU')}
+          </div>
         </div>
       )}
     </div>

@@ -15,13 +15,14 @@ export interface PreSkeletonState {
   dialogue: Dialogue;
   control: Control;
   gate?: Gate;
+  document?: DocumentState;
 }
 
 export interface StateMeta {
   session_id: string;
   schema_id: string;
   schema_version: string;
-  stage: 'pre_skeleton';
+  stage: 'pre_skeleton' | 'skeleton_ready';
   locale: {
     language: 'ru';
     jurisdiction: 'RU';
@@ -97,7 +98,7 @@ export interface GateBlocker {
 
 export interface LLMStepOutput {
   output_id: string;
-  step: 'INTERPRET' | 'GATE_CHECK';
+  step: 'INTERPRET' | 'GATE_CHECK' | 'SKELETON_GENERATE';
   patch: Patch;
   issue_updates?: IssueUpsert[];
   next_action: NextAction;
@@ -127,6 +128,7 @@ export type NextAction =
   | { kind: 'ask_user'; ask_user: AskUserAction }
   | { kind: 'proceed_to_gate' }
   | { kind: 'proceed_to_skeleton' }
+  | { kind: 'proceed_to_clause_requirements' }
   | { kind: 'halt_error'; error: HaltError };
 
 export interface AskUserAction {
@@ -154,6 +156,38 @@ export interface SafetyFlags {
   has_unconfirmed_assumptions?: boolean;
   detected_conflict?: boolean;
   repeat_question_risk?: boolean;
+}
+
+// ============================================================================
+// Contract Skeleton Types
+// ============================================================================
+
+export interface ContractSkeleton {
+  root: SkeletonNode;
+}
+
+export interface SkeletonNode {
+  node_id: string;
+  kind: 'document' | 'section' | 'clause' | 'appendix';
+  title: string;
+  tags: string[];
+  purpose?: string;
+  include_if?: string[];
+  requires?: string[];
+  notes_for_generator?: string;
+  children: SkeletonNode[];
+}
+
+export interface SkeletonMeta {
+  schema_version: string;
+  generated_at: string;
+  generated_by_step: string;
+  node_count: number;
+}
+
+export interface DocumentState {
+  skeleton?: ContractSkeleton;
+  skeleton_meta?: SkeletonMeta;
 }
 
 // ============================================================================
@@ -186,7 +220,7 @@ export interface SendMessageResponse {
 }
 
 export interface RunStepRequest {
-  step: 'INTERPRET' | 'GATE_CHECK';
+  step: 'INTERPRET' | 'GATE_CHECK' | 'SKELETON_GENERATE';
 }
 
 export interface RunStepResponse {

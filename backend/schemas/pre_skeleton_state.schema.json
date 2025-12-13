@@ -23,7 +23,7 @@
         "schema_version": { "type": "string" },
         "stage": {
           "type": "string",
-          "enum": ["pre_skeleton"]
+          "enum": ["pre_skeleton", "skeleton_ready"]
         },
         "locale": {
           "type": "object",
@@ -117,6 +117,30 @@
         "blockers": {
           "type": "array",
           "items": { "$ref": "#/$defs/GateBlocker" }
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "description": "Optional. Document structure and skeleton.",
+      "additionalProperties": false,
+      "properties": {
+        "skeleton": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["root"],
+          "description": "Contract skeleton structure. Validated separately by contract_skeleton schema."
+        },
+        "skeleton_meta": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_version", "generated_at", "generated_by_step", "node_count"],
+          "properties": {
+            "schema_version": { "type": "string" },
+            "generated_at": { "type": "string", "format": "date-time" },
+            "generated_by_step": { "type": "string" },
+            "node_count": { "type": "integer", "minimum": 1 }
+          }
         }
       }
     }

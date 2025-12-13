@@ -9,7 +9,7 @@
     "output_id": { "type": "string" },
     "step": {
       "type": "string",
-      "enum": ["INTERPRET", "GATE_CHECK"]
+      "enum": ["INTERPRET", "GATE_CHECK", "SKELETON_GENERATE"]
     },
     "patch": {
       "type": "object",
@@ -46,7 +46,7 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["ask_user", "proceed_to_gate", "proceed_to_skeleton", "halt_error"]
+          "enum": ["ask_user", "proceed_to_gate", "proceed_to_skeleton", "proceed_to_clause_requirements", "halt_error"]
         },
         "ask_user": { "$ref": "#/$defs/AskUserAction" },
         "error": { "$ref": "#/$defs/HaltError" }
